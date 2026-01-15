@@ -1,0 +1,100 @@
+{
+  "version": "1.0.0",
+  "exportDate": "2026-01-15T06:05:40.265Z",
+  "roommates": [
+    {
+      "id": "1768454433168",
+      "name": "pawan"
+    },
+    {
+      "id": "1768454436296",
+      "name": "melu"
+    },
+    {
+      "id": "1768454439668",
+      "name": "yogi"
+    }
+  ],
+  "expenses": [],
+  "fixedCosts": {
+    "rent": 0,
+    "electricity": 0
+  },
+  "paidRoommateIds": [],
+  "metadata": {
+    "totalExpenses": 0,
+    "totalRoommates": 3,
+    "lastUpdated": "2026-01-15T06:05:40.265Z"
+  },
+  "sharedPurchases": [
+    {
+      "itemName": "creeem ice",
+      "amount": 600,
+      "buyer": "yogi",
+      "payer": "pawan",
+      "date": "15-01-2026",
+      "paymode": "UPI",
+      "splitBetween": [
+        "melu",
+        "pawan",
+        "yogi"
+      ],
+      "perPersonAmount": 200,
+      "id": "1768457140265"
+    },
+    {
+      "itemName": "icecreem",
+      "amount": 300,
+      "buyer": "yogi",
+      "payer": "pawan",
+      "date": "15-01-2026",
+      "paymode": "UPI",
+      "splitBetween": [
+        "pawan",
+        "melu",
+        "yogi"
+      ],
+      "perPersonAmount": 100,
+      "id": "1768457095626"
+    },
+    {
+      "itemName": "cheken",
+      "amount": 300,
+      "buyer": "pawan",
+      "payer": "pawan",
+      "date": "15-01-2026",
+      "paymode": "UPI",
+      "splitBetween": [
+        "melu",
+        "pawan",
+        "yogi"
+      ],
+      "perPersonAmount": 100,
+      "id": "1768456909563"
+    },
+    {
+      "itemName": "hair oil",
+      "amount": 100,
+      "buyer": "melu",
+      "payer": "pawan",
+      "date": "15-01-2026",
+      "paymode": "UPI",
+      "id": "1768456828040"
+    },
+    {
+      "itemName": "rice",
+      "amount": 3000,
+      "buyer": "pawan",
+      "payer": "pawan",
+      "date": "15-01-2026",
+      "paymode": "UPI",
+      "splitBetween": [
+        "pawan",
+        "melu",
+        "yogi"
+      ],
+      "perPersonAmount": 1000,
+      "id": "1768456757791"
+    }
+  ]
+}

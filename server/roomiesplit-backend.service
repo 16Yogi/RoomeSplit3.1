@@ -1,0 +1,20 @@
+[Unit]
+Description=RoomieSplit Backend Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/html/RoomieSplit-main/server
+ExecStart=/usr/bin/node index.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=roomiesplit-backend
+Environment=NODE_ENV=production
+Environment=PORT=3001
+
+[Install]
+WantedBy=multi-user.target
+
