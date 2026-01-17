@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "exportDate": "2026-01-15T06:05:40.265Z",
+  "exportDate": "2026-01-17T07:45:36.072Z",
   "roommates": [
     {
       "id": "1768454433168",
@@ -15,86 +15,76 @@
       "name": "yogi"
     }
   ],
-  "expenses": [],
+  "expenses": [
+    {
+      "name": "melu",
+      "to": "pawan",
+      "type": "Settlement",
+      "amount": 30,
+      "date": "17-01-2026",
+      "paymode": "UPI",
+      "note": "Settlement payment to pawan",
+      "id": "1768635936070"
+    },
+    {
+      "name": "pawan",
+      "type": "Other",
+      "amount": 100,
+      "date": "17-01-2026",
+      "paymode": "UPI",
+      "note": "Item: facewash",
+      "id": "1768633049739"
+    }
+  ],
   "fixedCosts": {
     "rent": 0,
     "electricity": 0
   },
   "paidRoommateIds": [],
   "metadata": {
-    "totalExpenses": 0,
+    "totalExpenses": 130,
     "totalRoommates": 3,
-    "lastUpdated": "2026-01-15T06:05:40.265Z"
+    "lastUpdated": "2026-01-17T07:45:36.072Z"
   },
   "sharedPurchases": [
     {
-      "itemName": "creeem ice",
-      "amount": 600,
-      "buyer": "yogi",
-      "payer": "pawan",
-      "date": "15-01-2026",
-      "paymode": "UPI",
-      "splitBetween": [
-        "melu",
-        "pawan",
-        "yogi"
-      ],
-      "perPersonAmount": 200,
-      "id": "1768457140265"
-    },
-    {
-      "itemName": "icecreem",
-      "amount": 300,
-      "buyer": "yogi",
-      "payer": "pawan",
-      "date": "15-01-2026",
-      "paymode": "UPI",
-      "splitBetween": [
-        "pawan",
-        "melu",
-        "yogi"
-      ],
-      "perPersonAmount": 100,
-      "id": "1768457095626"
-    },
-    {
-      "itemName": "cheken",
-      "amount": 300,
+      "itemName": "vegitable",
+      "amount": 90,
       "buyer": "pawan",
       "payer": "pawan",
-      "date": "15-01-2026",
+      "date": "17-01-2026",
       "paymode": "UPI",
       "splitBetween": [
-        "melu",
         "pawan",
+        "melu",
         "yogi"
       ],
-      "perPersonAmount": 100,
-      "id": "1768456909563"
+      "perPersonAmount": 30,
+      "id": "1768635130858"
     },
     {
-      "itemName": "hair oil",
+      "itemName": "facewash",
       "amount": 100,
-      "buyer": "melu",
+      "buyer": "pawan",
       "payer": "pawan",
-      "date": "15-01-2026",
+      "date": "17-01-2026",
       "paymode": "UPI",
-      "id": "1768456828040"
+      "id": "1768633049736"
     },
     {
       "itemName": "rice",
-      "amount": 3000,
+      "amount": 900,
       "buyer": "pawan",
       "payer": "pawan",
-      "date": "15-01-2026",
+      "date": "17-01-2026",
       "paymode": "UPI",
       "splitBetween": [
         "pawan",
         "melu",
         "yogi"
       ],
-      "perPersonAmount": 1000,
-      "id": "1768456757791"
+      "perPersonAmount": 300,
+      "id": "1768633029075"
     }
   ]
 }

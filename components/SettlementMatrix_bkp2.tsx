@@ -25,31 +25,9 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
 
   const m = roommates.length;
 
-  // --- Helper Functions for Deduplication ---
-
-  const getLikelyItemSplitKeys = (purchaseList: SharedPurchase[]) => {
-    const keys = new Set<string>();
-    purchaseList.forEach(p => {
-      // Key format: PayerName|Amount|ItemName
-      keys.add(`${p.payer}|${p.amount.toFixed(2)}|${p.itemName.toLowerCase()}`);
-    });
-    return keys;
-  };
-
-  const isExpenseDuplicate = (e: Expense, keys: Set<string>) => {
-    if (!e.note || !e.note.toLowerCase().includes('item:')) return false;
-    
-    const match = e.note.match(/Item:\s*(.+?)(?:\s*-|$)/i);
-    if (!match) return false;
-    
-    const itemName = match[1].trim().toLowerCase();
-    const key = `${e.name}|${e.amount.toFixed(2)}|${itemName}`;
-    return keys.has(key);
-  };
-
-  // ------------------------------------------
-
   // Calculate settlements for given expenses and shared purchases
+  // - `spendingMap`: used for debt calculation (expenses split across ALL roommates, m)
+  // - `spendingDisplayMap`: used only for "Variable Spent" column display (shows payer's total spend incl. item-split purchases)
   const calculateSettlements = (expenseList: Expense[], purchaseList: SharedPurchase[] = []) => {
     const spendingMap = new Map<string, number>();
     const spendingDisplayMap = new Map<string, number>();
@@ -60,23 +38,32 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
       spendingDisplayMap.set(r.name, 0);
     });
 
-    const itemSplitExpenseKeys = getLikelyItemSplitKeys(purchaseList);
+    // If an expense was auto-created from ItemSplitCalculator (note: "Item: ...")
+    // and we also have a matching SharedPurchase entry for that same item,
+    // counting it in spendingMap would double-count. We'll skip it and rely on shared purchase split logic.
+    const itemSplitExpenseKeys = new Set<string>();
+    purchaseList.forEach(p => {
+      if (p.buyer === p.payer) {
+        itemSplitExpenseKeys.add(`${p.buyer}|${p.amount.toFixed(2)}|${p.itemName.toLowerCase()}`);
+      }
+    });
+
+    const isLikelyItemSplitExpenseDuplicate = (e: Expense) => {
+      if (!e.note || !e.note.toLowerCase().includes('item:')) return false;
+      const match = e.note.match(/Item:\s*(.+?)(?:\s*-|$)/i);
+      if (!match) return false;
+      const itemName = match[1].trim().toLowerCase();
+      const key = `${e.name}|${e.amount.toFixed(2)}|${itemName}`;
+      return itemSplitExpenseKeys.has(key);
+    };
 
     // Process regular expenses
     expenseList.forEach(e => {
       if (e.type !== ExpenseType.SETTLEMENT) {
-        // If this expense is a duplicate of a Shared Purchase, SKIP IT entirely.
-        // We rely on the purchaseList loop to add it to the Display Map (Variable Spent)
-        // and the Debt Map (Shared Debts). This prevents double counting.
-        if (isExpenseDuplicate(e, itemSplitExpenseKeys)) {
-          return;
-        }
-
-        // Standard Shared Expense (Split by All)
+        if (isLikelyItemSplitExpenseDuplicate(e)) return;
         spendingMap.set(e.name, (spendingMap.get(e.name) || 0) + e.amount);
         spendingDisplayMap.set(e.name, (spendingDisplayMap.get(e.name) || 0) + e.amount);
       } else {
-        // Handle Settlements
         let to = e.to;
         if (!to) {
           const match = e.note?.match(/Settlement payment to (.+)/);
@@ -89,12 +76,14 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
       }
     });
 
-    // Process shared purchases (Specific Debts & Variable Spent)
+    // Process shared purchases
     const sharedPurchaseDebts = new Map<string, number>();
     purchaseList.forEach(purchase => {
-      // Always add to display map so the payer sees their total spend (Variable Spent).
+      // Always show payer's paid amount in "Variable Spent" display
       spendingDisplayMap.set(purchase.payer, (spendingDisplayMap.get(purchase.payer) || 0) + purchase.amount);
 
+      // If split is enabled, each person in splitBetween owes their share to the payer.
+      // Otherwise, keep the legacy behavior: buyer owes payer the full amount (only when buyer !== payer).
       if (purchase.splitBetween && purchase.splitBetween.length > 0) {
         const splitCount = purchase.splitBetween.length;
         const perPerson = purchase.perPersonAmount ?? (purchase.amount / splitCount);
@@ -108,8 +97,8 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
         return;
       }
 
-      // Legacy direct-debt
       if (purchase.buyer !== purchase.payer) {
+        // Legacy direct-debt scenario (no split): buyer owes payer full amount.
         const debtKey = `${purchase.buyer}-${purchase.payer}`;
         sharedPurchaseDebts.set(debtKey, (sharedPurchaseDebts.get(debtKey) || 0) + purchase.amount);
       }
@@ -121,7 +110,7 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
   // Get unique months from expenses
   const uniqueMonths = useMemo(() => getUniqueMonths(expenses), [expenses]);
   
-  // Convert dates for filtering
+  // Convert dates for filtering (convert DD-MM-YYYY to YYYY-MM-DD for input)
   const startDateInput = startDate ? formatDateToYYYYMMDD(startDate) : '';
   const endDateInput = endDate ? formatDateToYYYYMMDD(endDate) : '';
   
@@ -170,16 +159,17 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
 
   const hasDateFilter = startDate || endDate;
 
-  // Calculate settlements for filtered expenses and purchases
+  // Calculate settlements for filtered expenses and purchases (all or selected month)
   const { purchaseSpending, purchaseSpendingDisplay, directPayments, sharedPurchaseDebts } = useMemo(() => {
     return calculateSettlements(filteredExpenses, filteredPurchases);
   }, [filteredExpenses, filteredPurchases, roommates]);
 
-  // Calculate settlements for each month
+  // Calculate settlements for each month (including shared purchases)
   const monthlySettlements = useMemo(() => {
     const monthly: Record<string, ReturnType<typeof calculateSettlements>> = {};
     uniqueMonths.forEach(month => {
       const monthExpenses = filterExpensesByMonth<Expense>(expenses, month);
+      // Filter shared purchases by month
       const monthPurchases = sharedPurchases.filter(purchase => {
         const purchaseMonth = getMonthYear(purchase.date);
         return purchaseMonth === month;
@@ -189,6 +179,7 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
     return monthly;
   }, [expenses, sharedPurchases, uniqueMonths, roommates]);
 
+  // Get date range display text
   const getDateRangeText = () => {
     if (!hasDateFilter) return 'All Time Settlement';
     if (startDate && endDate) return `Settlement from ${startDate} to ${endDate}`;
@@ -208,48 +199,39 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
     const iPaidJ = payments.get(`${rowName}-${colName}`) || 0;
     const jPaidI = payments.get(`${colName}-${rowName}`) || 0;
 
+    // Check for shared purchase debt (direct debt from Item Split Calculator)
+    // Make it symmetric: if A owes B, then cell(A,B) is +X and cell(B,A) is -X.
     const sharedDebt = (sharedPurchaseDebts?.get(`${rowName}-${colName}`) || 0) - (sharedPurchaseDebts?.get(`${colName}-${rowName}`) || 0);
 
     return baseDebt - iPaidJ + jPaidI + sharedDebt;
   };
 
-  const getSettlementInstructions = (
-    spending: Map<string, number>, 
-    payments: Map<string, number>, 
-    sharedDebts?: Map<string, number>, 
-    expenseList?: Expense[],
-    purchaseList?: SharedPurchase[]
-  ) => {
+  const getSettlementInstructions = (spending: Map<string, number>, payments: Map<string, number>, sharedDebts?: Map<string, number>, expenseList?: Expense[]) => {
     const inst: { from: string; to: string; amount: number; expenseDetails?: Array<{ type: string; amount: number; totalAmount: number; items?: string[] }> }[] = [];
-    
-    // Prepare filter keys once
-    const splitKeys = getLikelyItemSplitKeys(purchaseList || []);
-
+    // Use the exact same calculation as the matrix table
+    // Matrix table iterates: roommates.map(rowUser => roommates.map(colUser => getDebt(rowUser, colUser)))
+    // So we do the same iteration to match exactly
     for (let i = 0; i < roommates.length; i++) {
       for (let j = 0; j < roommates.length; j++) {
-        if (i === j) continue; // Skip diagonal
+        if (i === j) continue; // Skip diagonal (self)
         
+        // Use exact same calculation as matrix table: getDebt(rowName, colName)
         const debt = getDebt(roommates[i].name, roommates[j].name, spending, payments, sharedDebts);
         
-        // Only include positive debts
+        // Matrix shows positive values when row owes column (debt > 0 means rowUser owes colUser)
+        // Only include positive debts to avoid duplicates
         if (debt > 0.01) {
+          // Get expense details for this debt with item names
           const expenseDetails: Array<{ type: string; amount: number; totalAmount: number; items?: string[] }> = [];
-          
-          // 1. Details from General Expenses (Split by All)
           if (expenseList) {
-            // FILTER: Exclude any expense that is a duplicate of a Shared Purchase
-            // This prevents "Personal" items (like facewash) from showing up here
-            const colExpenses = expenseList.filter(e => 
-              e.name === roommates[j].name && 
-              e.type !== ExpenseType.SETTLEMENT &&
-              !isExpenseDuplicate(e, splitKeys)
-            );
-            
+            const colExpenses = expenseList.filter(e => e.name === roommates[j].name && e.type !== ExpenseType.SETTLEMENT);
+            // Group expenses by type and collect item names
             const expensesByType = new Map<string, { totalAmount: number; items: string[] }>();
             colExpenses.forEach(e => {
               const existing = expensesByType.get(e.type) || { totalAmount: 0, items: [] };
               existing.totalAmount += e.amount;
               
+              // Extract item name from note if available
               if (e.note) {
                 const itemMatch = e.note.match(/Item:\s*(.+?)(?:\s*-|$)/i);
                 if (itemMatch) {
@@ -273,43 +255,6 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
               });
             });
           }
-
-          // 2. Details from Specific Shared Purchases (Split Items or Direct)
-          if (purchaseList) {
-            const creditorName = roommates[j].name;
-            const debtorName = roommates[i].name;
-
-            // Iterate through EACH purchase individually to avoid clumping them together
-            purchaseList.forEach(p => {
-              if (p.payer !== creditorName) return;
-              
-              let isRelevant = false;
-              let shareAmount = 0;
-
-              // Check if debtor owes for this SPECIFIC purchase
-              if (p.splitBetween && p.splitBetween.length > 0) {
-                 if (p.splitBetween.includes(debtorName) && debtorName !== creditorName) {
-                   isRelevant = true;
-                   shareAmount = p.perPersonAmount ?? (p.amount / p.splitBetween.length);
-                 }
-              } else {
-                 // Legacy direct debt (Buyer owes Payer)
-                 if (p.buyer === debtorName && debtorName !== creditorName) {
-                   isRelevant = true;
-                   shareAmount = p.amount;
-                 }
-              }
-
-              if (isRelevant) {
-                 expenseDetails.push({
-                   type: 'Specific/Split Items', // Or you can change this label if needed
-                   amount: shareAmount,
-                   totalAmount: p.amount,
-                   items: [p.itemName] // Display individual item name
-                 });
-              }
-            });
-          }
           
           inst.push({ from: roommates[i].name, to: roommates[j].name, amount: debt, expenseDetails });
         }
@@ -319,8 +264,8 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
   };
 
   const settlementInstructions = useMemo(() => {
-    return getSettlementInstructions(purchaseSpending, directPayments, sharedPurchaseDebts, filteredExpenses, filteredPurchases);
-  }, [purchaseSpending, directPayments, sharedPurchaseDebts, roommates, filteredExpenses, filteredPurchases]);
+    return getSettlementInstructions(purchaseSpending, directPayments, sharedPurchaseDebts, filteredExpenses);
+  }, [purchaseSpending, directPayments, sharedPurchaseDebts, roommates, filteredExpenses]);
 
   const handleRecordPayment = (from: string, to: string, defaultAmount: number) => {
     const amountToSubmit = parseFloat(payAmount) || defaultAmount;
@@ -339,6 +284,31 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
     setPayAmount('');
   };
 
+  const allSettledCount = roommates.filter(r => paidRoommateIds.includes(r.id)).length;
+
+  // Get all debts for a specific user
+  const getUserDebts = (userName: string) => {
+    const owes: { to: string; amount: number }[] = [];
+    const owedBy: { from: string; amount: number }[] = [];
+    let totalOwes = 0;
+    let totalOwed = 0;
+
+    roommates.forEach(roommate => {
+      if (roommate.name !== userName) {
+        const debt = getDebt(userName, roommate.name, purchaseSpending, directPayments, sharedPurchaseDebts);
+        if (debt > 0.01) {
+          owes.push({ to: roommate.name, amount: debt });
+          totalOwes += debt;
+        } else if (debt < -0.01) {
+          owedBy.push({ from: roommate.name, amount: Math.abs(debt) });
+          totalOwed += Math.abs(debt);
+        }
+      }
+    });
+
+    return { owes, owedBy, totalOwes, totalOwed, netAmount: totalOwed - totalOwes };
+  };
+
   const toggleMonthExpansion = (month: string) => {
     const newExpanded = new Set(expandedMonths);
     if (newExpanded.has(month)) {
@@ -349,8 +319,7 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
     setExpandedMonths(newExpanded);
   };
 
-  const allSettledCount = roommates.filter(r => paidRoommateIds.includes(r.id)).length;
-
+  // Render settlement matrix table
   const renderMatrix = (
     spending: Map<string, number>,
     spendingDisplay: Map<string, number>,
@@ -492,20 +461,8 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
           <div className="space-y-4">
             {uniqueMonths.map(month => {
               const monthExpenses = filterExpensesByMonth(expenses, month);
-              const monthPurchases = sharedPurchases.filter(purchase => {
-                const purchaseMonth = getMonthYear(purchase.date);
-                return purchaseMonth === month;
-              });
-
               const monthData = monthlySettlements[month];
-              const monthInstructions = getSettlementInstructions(
-                monthData.purchaseSpending, 
-                monthData.directPayments, 
-                monthData.sharedPurchaseDebts, 
-                monthExpenses,
-                monthPurchases
-              );
-              
+              const monthInstructions = getSettlementInstructions(monthData.purchaseSpending, monthData.directPayments, monthData.sharedPurchaseDebts);
               const isExpanded = expandedMonths.has(month);
               const monthTotal = Array.from(monthData.purchaseSpending.values()).reduce((sum: number, val: number) => sum + val, 0);
 
@@ -709,7 +666,7 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
                                   ) : (
                                     <div>• Share of {inst.to}'s expenses</div>
                                   )}
-                                  {/* <div>• Item Split Calculator purchases (if any)</div> */}
+                                  <div>• Item Split Calculator purchases (if any)</div>
                                   <div>• Adjusted for any settlements already made</div>
                                 </div>
                               </div>
@@ -773,7 +730,7 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
                                 ) : (
                                   <div>• Share of your expenses</div>
                                 )}
-                                {/* <div>• Item Split Calculator purchases (if any)</div> */}
+                                <div>• Item Split Calculator purchases (if any)</div>
                                 <div>• Adjusted for any settlements already made</div>
                               </div>
                             </div>
