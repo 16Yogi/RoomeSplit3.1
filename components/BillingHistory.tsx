@@ -249,7 +249,7 @@ const BillingHistory: React.FC<BillingHistoryProps> = ({ expenses, onDelete, sha
             )}
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto pr-2">
             {filteredExpenses.map((expense) => {
               const formattedDate = formatDateToDDMMYYYY(expense.date);
               return (
@@ -333,7 +333,7 @@ const BillingHistory: React.FC<BillingHistoryProps> = ({ expenses, onDelete, sha
             )}
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto pr-2">
             {filteredPurchases.map((purchase) => {
               const formattedDate = formatDateToDDMMYYYY(purchase.date);
               const splitCount = purchase.splitBetween?.length || 0;

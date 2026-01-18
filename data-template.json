@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "exportDate": "2026-01-17T07:45:36.072Z",
+  "exportDate": "2026-01-18T11:35:28.231Z",
   "roommates": [
     {
       "id": "1768454433168",
@@ -18,65 +18,193 @@
   "expenses": [
     {
       "name": "melu",
+      "type": "Other",
+      "amount": 900,
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "note": "Item: face",
+      "id": "1768736128231"
+    },
+    {
+      "name": "melu",
+      "type": "Other",
+      "amount": 900,
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "note": "Item: face",
+      "id": "1768736106783"
+    },
+    {
+      "name": "yogi",
+      "to": "melu",
+      "type": "Settlement",
+      "amount": 200,
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "note": "Settlement payment to melu",
+      "id": "1768733603066"
+    },
+    {
+      "name": "yogi",
       "to": "pawan",
       "type": "Settlement",
-      "amount": 30,
-      "date": "17-01-2026",
+      "amount": 400,
+      "date": "18-01-2026",
       "paymode": "UPI",
       "note": "Settlement payment to pawan",
-      "id": "1768635936070"
+      "id": "1768732043400"
+    },
+    {
+      "name": "melu",
+      "to": "pawan",
+      "type": "Settlement",
+      "amount": 200,
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "note": "Settlement payment to pawan",
+      "id": "1768731971773"
+    },
+    {
+      "name": "melu",
+      "type": "Other",
+      "amount": 200,
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "note": "Item: facewash",
+      "id": "1768730275691"
+    },
+    {
+      "name": "melu",
+      "type": "Other",
+      "amount": 100,
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "note": "Item: facewash",
+      "id": "1768730072291"
     },
     {
       "name": "pawan",
       "type": "Other",
       "amount": 100,
-      "date": "17-01-2026",
+      "date": "18-01-2026",
       "paymode": "UPI",
-      "note": "Item: facewash",
-      "id": "1768633049739"
+      "note": "Item: 100",
+      "id": "1768727690385"
     }
   ],
   "fixedCosts": {
-    "rent": 0,
-    "electricity": 0
+    "rent": 1200,
+    "electricity": 1200
   },
   "paidRoommateIds": [],
   "metadata": {
-    "totalExpenses": 130,
+    "totalExpenses": 3000,
     "totalRoommates": 3,
-    "lastUpdated": "2026-01-17T07:45:36.072Z"
+    "lastUpdated": "2026-01-18T11:35:28.231Z"
   },
   "sharedPurchases": [
     {
-      "itemName": "vegitable",
-      "amount": 90,
-      "buyer": "pawan",
-      "payer": "pawan",
-      "date": "17-01-2026",
+      "itemName": "face",
+      "amount": 900,
+      "buyer": "melu",
+      "payer": "melu",
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "id": "1768736127920"
+    },
+    {
+      "itemName": "face",
+      "amount": 900,
+      "buyer": "melu",
+      "payer": "melu",
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "id": "1768736106776"
+    },
+    {
+      "itemName": "rice",
+      "amount": 900,
+      "buyer": "yogi",
+      "payer": "yogi",
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "splitBetween": [
+        "melu",
+        "pawan",
+        "yogi"
+      ],
+      "perPersonAmount": 300,
+      "id": "1768734445354"
+    },
+    {
+      "itemName": "sabji",
+      "amount": 600,
+      "buyer": "melu",
+      "payer": "melu",
+      "date": "18-01-2026",
       "paymode": "UPI",
       "splitBetween": [
         "pawan",
         "melu",
         "yogi"
       ],
-      "perPersonAmount": 30,
-      "id": "1768635130858"
+      "perPersonAmount": 200,
+      "id": "1768731817223"
+    },
+    {
+      "itemName": "chicken",
+      "amount": 600,
+      "buyer": "yogi",
+      "payer": "yogi",
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "splitBetween": [
+        "pawan",
+        "melu",
+        "yogi"
+      ],
+      "perPersonAmount": 200,
+      "id": "1768731341869"
+    },
+    {
+      "itemName": "sabji",
+      "amount": 600,
+      "buyer": "melu",
+      "payer": "melu",
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "splitBetween": [
+        "pawan",
+        "melu",
+        "yogi"
+      ],
+      "perPersonAmount": 200,
+      "id": "1768731025745"
+    },
+    {
+      "itemName": "facewash",
+      "amount": 200,
+      "buyer": "melu",
+      "payer": "melu",
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "id": "1768730275676"
     },
     {
       "itemName": "facewash",
       "amount": 100,
-      "buyer": "pawan",
-      "payer": "pawan",
-      "date": "17-01-2026",
+      "buyer": "melu",
+      "payer": "melu",
+      "date": "18-01-2026",
       "paymode": "UPI",
-      "id": "1768633049736"
+      "id": "1768730072286"
     },
     {
-      "itemName": "rice",
+      "itemName": "flour",
       "amount": 900,
       "buyer": "pawan",
       "payer": "pawan",
-      "date": "17-01-2026",
+      "date": "18-01-2026",
       "paymode": "UPI",
       "splitBetween": [
         "pawan",
@@ -84,7 +212,31 @@
         "yogi"
       ],
       "perPersonAmount": 300,
-      "id": "1768633029075"
+      "id": "1768728844749"
+    },
+    {
+      "itemName": "100",
+      "amount": 100,
+      "buyer": "pawan",
+      "payer": "pawan",
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "id": "1768727690081"
+    },
+    {
+      "itemName": "rice",
+      "amount": 900,
+      "buyer": "pawan",
+      "payer": "pawan",
+      "date": "18-01-2026",
+      "paymode": "UPI",
+      "splitBetween": [
+        "pawan",
+        "melu",
+        "yogi"
+      ],
+      "perPersonAmount": 300,
+      "id": "1768727634845"
     }
   ]
 }

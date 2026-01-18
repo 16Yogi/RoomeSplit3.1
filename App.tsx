@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, PieChart, Users, Receipt, CreditCard, Sparkles, Download, CheckCircle2, RotateCcw, Eraser, Save, Menu, Upload, FileJson, Settings, X, ArrowRight, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, Trash2, PieChart, Users, Receipt, CreditCard, Sparkles, Download, CheckCircle2, RotateCcw, Eraser, Save, Menu, Upload, FileJson, Settings, X, ArrowRight, TrendingUp, TrendingDown, Filter, Search, Calendar } from 'lucide-react';
 import { Expense, ExpenseType, Roommate, SharedPurchase } from './types';
 import SettlementMatrix from './components/SettlementMatrix';
 import ExpenseList from './components/ExpenseList';
@@ -12,6 +11,7 @@ import { GoogleGenAI } from "@google/genai";
 import * as XLSX from 'xlsx';
 import { generateJSONData, exportToJSONFile, importFromJSONFile } from './utils/dataStorage';
 import { roommatesAPI, expensesAPI, fixedCostsAPI, paidRoommatesAPI, dataAPI, sharedPurchasesAPI } from './utils/api';
+import { formatDateToDDMMYYYY, formatDateToYYYYMMDD, isDateInRange } from './utils/dateUtils';
 
 const App: React.FC = () => {
   const [roommates, setRoommates] = useState<Roommate[]>([]);
@@ -41,6 +41,10 @@ const App: React.FC = () => {
     return false;
   });
   const [selectedRoommateForHistory, setSelectedRoommateForHistory] = useState<string | null>(null);
+  const [historyFilterSearch, setHistoryFilterSearch] = useState<string>('');
+  const [historyFilterStartDate, setHistoryFilterStartDate] = useState<string>('');
+  const [historyFilterEndDate, setHistoryFilterEndDate] = useState<string>('');
+  const [showHistoryFilters, setShowHistoryFilters] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load data from API on mount
@@ -203,12 +207,10 @@ const App: React.FC = () => {
 
   const handleExportJSON = async () => {
     try {
-      // Get latest data from API
       const jsonData = await dataAPI.getAll();
       exportToJSONFile(jsonData);
       alert('JSON file exported successfully!');
     } catch (error) {
-      // Fallback to generate from current state
       try {
         const jsonData = generateJSONData(
           roommates,
@@ -246,10 +248,7 @@ const App: React.FC = () => {
         `- Fixed costs: Rent ₹${importedData.fixedCosts.rent}, Electricity ₹${importedData.fixedCosts.electricity}\n\n` +
         `Current data will be replaced. Continue?`
       )) {
-        // Import to backend
         await dataAPI.import(importedData);
-        
-        // Update local state
         setRoommates(importedData.roommates);
         setExpenses(importedData.expenses);
         setFixedRent(importedData.fixedCosts.rent);
@@ -263,7 +262,6 @@ const App: React.FC = () => {
       alert(`Failed to import JSON file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       console.error(error);
     } finally {
-      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -280,19 +278,13 @@ const App: React.FC = () => {
       "Continue?"
     )) {
       try {
-        // Clear fixed costs
         await fixedCostsAPI.update(0, 0);
-        
-        // Clear paid roommates
         await paidRoommatesAPI.update([]);
-        
-        // Update local state (preserve expenses/history)
         setFixedRent(0);
         setElectricityBill(0);
         setLocalRent(0);
         setLocalElectricity(0);
         setPaidRoommateIds([]);
-        
         alert('Data reset successfully! Billing history has been preserved.');
       } catch (error) {
         alert('Failed to reset data');
@@ -305,19 +297,66 @@ const App: React.FC = () => {
   const calculateRoommateHistory = (roommateName: string) => {
     const m = roommates.length;
     
-    // Calculate spending and payments
-    const spendingMap = new Map<string, number>();
+    // 1. General Spending Map (For equal split expenses only)
+    const generalSpendingMap = new Map<string, number>();
+    
+    // 2. Total Paid Map (For display - everything the user paid out of pocket)
+    const totalPaidMap = new Map<string, number>();
+    
+    // 3. Payments (Settlements)
     const paymentsMap = new Map<string, number>();
     
+    // Initialize maps
     roommates.forEach(r => {
-      spendingMap.set(r.name, 0);
+      generalSpendingMap.set(r.name, 0);
+      totalPaidMap.set(r.name, 0);
     });
 
-    // Process regular expenses
+    // --- Helper to identify expenses that correspond to Shared Purchases ---
+    // Only include purchases that are actually split (have splitBetween)
+    const getLikelyItemSplitKeys = (purchaseList: SharedPurchase[]) => {
+      const keys = new Set<string>();
+      purchaseList.forEach(p => {
+        // Only include purchases that are actually split among roommates
+        if (p.splitBetween && p.splitBetween.length > 0) {
+          keys.add(`${p.payer}|${p.amount.toFixed(2)}|${p.itemName.toLowerCase()}`);
+        }
+      });
+      return keys;
+    };
+
+    const isExpenseDuplicate = (e: Expense, keys: Set<string>) => {
+      if (!e.note || !e.note.toLowerCase().includes('item:')) return false;
+      const match = e.note.match(/Item:\s*(.+?)(?:\s*-|$)/i);
+      if (!match) return false;
+      const itemName = match[1].trim().toLowerCase();
+      const key = `${e.name}|${e.amount.toFixed(2)}|${itemName}`;
+      return keys.has(key);
+    };
+
+    const itemSplitKeys = getLikelyItemSplitKeys(sharedPurchases);
+
+    // --- Helper to identify personal expenses ---
+    // Personal expenses are those with "Item:" in note but NOT in shared purchases (itemSplitKeys)
+    const isPersonalExpense = (e: Expense) => {
+      if (!e.note || !e.note.toLowerCase().includes('item:')) return false;
+      // If it has "Item:" but is NOT a duplicate of a shared purchase, it's personal
+      return !isExpenseDuplicate(e, itemSplitKeys);
+    };
+
+    // --- Process Regular Expenses ---
     expenses.forEach(e => {
       if (e.type !== ExpenseType.SETTLEMENT) {
-        spendingMap.set(e.name, (spendingMap.get(e.name) || 0) + e.amount);
+        // Track TOTAL paid for display stats
+        totalPaidMap.set(e.name, (totalPaidMap.get(e.name) || 0) + e.amount);
+
+        // Track GENERAL spending (only if not a specific shared item AND not personal)
+        // Personal expenses should NOT be divided among roommates
+        if (!isExpenseDuplicate(e, itemSplitKeys) && !isPersonalExpense(e)) {
+          generalSpendingMap.set(e.name, (generalSpendingMap.get(e.name) || 0) + e.amount);
+        }
       } else {
+        // Handle Settlement
         let to = e.to;
         if (!to) {
           const match = e.note?.match(/Settlement payment to (.+)/);
@@ -330,52 +369,100 @@ const App: React.FC = () => {
       }
     });
 
-    // Process shared purchases
+    // --- Process Shared Purchases (Specific Debts) ---
     const sharedPurchaseDebts = new Map<string, number>();
+    
     sharedPurchases.forEach(purchase => {
-      if (purchase.buyer !== purchase.payer) {
-        const debtKey = `${purchase.buyer}-${purchase.payer}`;
-        sharedPurchaseDebts.set(debtKey, (sharedPurchaseDebts.get(debtKey) || 0) + purchase.amount);
+      // Add shared purchase amount to totalPaidMap for the payer
+      // This ensures "Total Paid" includes both expenses and shared purchases
+      
+      // Check if this purchase has a corresponding expense (to avoid double counting)
+      // Match by payer name, amount, and item name from note
+      const hasMatchingExpense = expenses.some(e => {
+        if (e.name !== purchase.payer || e.type === ExpenseType.SETTLEMENT) return false;
+        if (!e.note?.toLowerCase().includes('item:')) return false;
+        
+        const match = e.note.match(/Item:\s*(.+?)(?:\s*-|$)/i);
+        if (!match) return false;
+        const itemNameFromNote = match[1].trim().toLowerCase();
+        const purchaseItemName = purchase.itemName.toLowerCase();
+        
+        // Match if item name and amount are the same
+        return itemNameFromNote === purchaseItemName && 
+               Math.abs(e.amount - purchase.amount) < 0.01;
+      });
+      
+      // If purchase has splitBetween, there's usually no expense, so add it
+      // If purchase has no splitBetween but no matching expense, add it
+      // If purchase has matching expense, don't add (already counted in expenses loop)
+      if (!hasMatchingExpense) {
+        totalPaidMap.set(purchase.payer, (totalPaidMap.get(purchase.payer) || 0) + purchase.amount);
+      }
+      
+      // Add shared purchases with splitBetween to generalSpendingMap for settlement calculation
+      // These are split equally among all roommates, so they need to be in generalSpendingMap
+      if (purchase.splitBetween && purchase.splitBetween.length > 0) {
+        // If no matching expense, add the purchase to generalSpendingMap
+        // This is needed for equal split calculation (baseDebt = (jSpent/m) - (iSpent/m))
+        // Items in generalSpendingMap are split equally among ALL roommates, so don't add to sharedPurchaseDebts
+        if (!hasMatchingExpense) {
+          generalSpendingMap.set(purchase.payer, (generalSpendingMap.get(purchase.payer) || 0) + purchase.amount);
+        }
+        // Note: We do NOT add to sharedPurchaseDebts here because items with splitBetween
+        // are handled by the general split calculation (baseDebt) when added to generalSpendingMap
       } else {
-        // Buyer and payer are same - this is already added as a regular expense
-        // Don't add to spendingMap here to avoid double counting
-        // The expense was already added in ItemSplitCalculator when buyer === payer
+        // Legacy direct debt (Buyer owes Payer)
+        if (purchase.buyer !== purchase.payer) {
+          const debtKey = `${purchase.buyer}-${purchase.payer}`;
+          sharedPurchaseDebts.set(debtKey, (sharedPurchaseDebts.get(debtKey) || 0) + purchase.amount);
+        }
       }
     });
 
-    // Calculate total expenses paid by this roommate
-    const totalPaid = spendingMap.get(roommateName) || 0;
+    // Calculate total expenses paid by this roommate (Use TotalPaidMap)
+    const totalPaid = totalPaidMap.get(roommateName) || 0;
 
     // Calculate total due (what they owe to others) with details
     let totalDue = 0;
     const dueBreakdown: Array<{ to: string; amount: number; details: string[] }> = [];
+    
     roommates.forEach(other => {
       if (other.name !== roommateName) {
-        const jSpent = spendingMap.get(other.name) || 0;
-        const iSpent = spendingMap.get(roommateName) || 0;
+        // 1. General Split Debt (Equal Split)
+        const jSpent = generalSpendingMap.get(other.name) || 0;
+        const iSpent = generalSpendingMap.get(roommateName) || 0;
         const baseDebt = (jSpent / m) - (iSpent / m);
-        const iPaidJ = paymentsMap.get(`${roommateName}-${other.name}`) || 0;
-        const jPaidI = paymentsMap.get(`${other.name}-${roommateName}`) || 0;
+        
+        // 2. Specific Shared Debt (Split Items)
         const sharedDebtKey = `${roommateName}-${other.name}`;
         const sharedDebt = sharedPurchaseDebts.get(sharedDebtKey) || 0;
+        
+        // 3. Payments
+        const iPaidJ = paymentsMap.get(`${roommateName}-${other.name}`) || 0;
+        const jPaidI = paymentsMap.get(`${other.name}-${roommateName}`) || 0;
+
         const debt = baseDebt - iPaidJ + jPaidI + sharedDebt;
+        
         if (debt > 0.01) {
           totalDue += debt;
           
           // Collect details about what this debt is for
           const details: string[] = [];
           
-          // Regular expenses share - show specific expenses with item names
+          // Regular expenses share details
           if (baseDebt > 0.01) {
-            const otherExpenses = expenses.filter(e => e.name === other.name && e.type !== ExpenseType.SETTLEMENT);
+            const otherExpenses = expenses.filter(e => 
+              e.name === other.name && 
+              e.type !== ExpenseType.SETTLEMENT &&
+              !isExpenseDuplicate(e, itemSplitKeys) && // Filter out shared items from general list
+              !isPersonalExpense(e) // Filter out personal expenses
+            );
+            
             if (otherExpenses.length > 0) {
-              // Group expenses by type and collect item names
               const expensesByType = new Map<string, { totalAmount: number; items: string[] }>();
               otherExpenses.forEach(e => {
                 const existing = expensesByType.get(e.type) || { totalAmount: 0, items: [] };
                 existing.totalAmount += e.amount;
-                
-                // Extract item name from note if available
                 if (e.note) {
                   const itemMatch = e.note.match(/Item:\s*(.+?)(?:\s*-|$)/i);
                   if (itemMatch) {
@@ -385,11 +472,9 @@ const App: React.FC = () => {
                     }
                   }
                 }
-                
                 expensesByType.set(e.type, existing);
               });
               
-              // Calculate share for each expense type and show items
               expensesByType.forEach((data, expenseType) => {
                 const sharePerPerson = data.totalAmount / m;
                 const itemsText = data.items.length > 0 ? ` (${data.items.join(', ')})` : '';
@@ -398,15 +483,26 @@ const App: React.FC = () => {
             }
           }
           
-          // Shared purchase debts
+          // Shared purchase details
           if (sharedDebt > 0.01) {
-            const relatedPurchases = sharedPurchases.filter(p => 
-              p.buyer === roommateName && p.payer === other.name
-            );
-            if (relatedPurchases.length > 0) {
-              const items = relatedPurchases.map(p => p.itemName).join(', ');
-              details.push(`Item Split: ${items} (₹${sharedDebt.toFixed(2)})`);
-            }
+            // Find purchases where 'other' paid and 'roommateName' owes
+            const relevantPurchases = sharedPurchases.filter(p => {
+              if (p.payer !== other.name) return false;
+              if (p.splitBetween && p.splitBetween.length > 0) {
+                return p.splitBetween.includes(roommateName) && roommateName !== other.name;
+              }
+              return p.buyer === roommateName && roommateName !== other.name;
+            });
+
+            relevantPurchases.forEach(p => {
+               let amountOwed = 0;
+               if (p.splitBetween && p.splitBetween.length > 0) {
+                 amountOwed = p.perPersonAmount ?? (p.amount / p.splitBetween.length);
+               } else {
+                 amountOwed = p.amount;
+               }
+               details.push(`Item Split: ${p.itemName} (₹${amountOwed.toFixed(2)})`);
+            });
           }
           
           // Adjustments from settlements
@@ -425,33 +521,43 @@ const App: React.FC = () => {
     // Calculate total owed to them (what others owe them) with details
     let totalOwed = 0;
     const owedBreakdown: Array<{ from: string; amount: number; details: string[] }> = [];
+    
     roommates.forEach(other => {
       if (other.name !== roommateName) {
-        const jSpent = spendingMap.get(roommateName) || 0;
-        const iSpent = spendingMap.get(other.name) || 0;
+        // 1. General Split Debt
+        const jSpent = generalSpendingMap.get(roommateName) || 0;
+        const iSpent = generalSpendingMap.get(other.name) || 0;
         const baseDebt = (jSpent / m) - (iSpent / m);
-        const iPaidJ = paymentsMap.get(`${other.name}-${roommateName}`) || 0;
-        const jPaidI = paymentsMap.get(`${roommateName}-${other.name}`) || 0;
+        
+        // 2. Specific Shared Debt
         const sharedDebtKey = `${other.name}-${roommateName}`;
         const sharedDebt = sharedPurchaseDebts.get(sharedDebtKey) || 0;
+        
+        // 3. Payments
+        const iPaidJ = paymentsMap.get(`${other.name}-${roommateName}`) || 0;
+        const jPaidI = paymentsMap.get(`${roommateName}-${other.name}`) || 0;
+
         const debt = baseDebt - iPaidJ + jPaidI + sharedDebt;
+        
         if (debt > 0.01) {
           totalOwed += debt;
           
-          // Collect details about what this amount is for
           const details: string[] = [];
           
-          // Regular expenses share - show specific expenses with item names
+          // Regular expenses share details
           if (baseDebt > 0.01) {
-            const myExpenses = expenses.filter(e => e.name === roommateName && e.type !== ExpenseType.SETTLEMENT);
+            const myExpenses = expenses.filter(e => 
+              e.name === roommateName && 
+              e.type !== ExpenseType.SETTLEMENT &&
+              !isExpenseDuplicate(e, itemSplitKeys) &&
+              !isPersonalExpense(e) // Filter out personal expenses
+            );
+            
             if (myExpenses.length > 0) {
-              // Group expenses by type and collect item names
               const expensesByType = new Map<string, { totalAmount: number; items: string[] }>();
               myExpenses.forEach(e => {
                 const existing = expensesByType.get(e.type) || { totalAmount: 0, items: [] };
                 existing.totalAmount += e.amount;
-                
-                // Extract item name from note if available
                 if (e.note) {
                   const itemMatch = e.note.match(/Item:\s*(.+?)(?:\s*-|$)/i);
                   if (itemMatch) {
@@ -461,11 +567,9 @@ const App: React.FC = () => {
                     }
                   }
                 }
-                
                 expensesByType.set(e.type, existing);
               });
               
-              // Calculate share for each expense type and show items
               expensesByType.forEach((data, expenseType) => {
                 const sharePerPerson = data.totalAmount / m;
                 const itemsText = data.items.length > 0 ? ` (${data.items.join(', ')})` : '';
@@ -476,13 +580,24 @@ const App: React.FC = () => {
           
           // Shared purchase debts
           if (sharedDebt > 0.01) {
-            const relatedPurchases = sharedPurchases.filter(p => 
-              p.buyer === other.name && p.payer === roommateName
-            );
-            if (relatedPurchases.length > 0) {
-              const items = relatedPurchases.map(p => p.itemName).join(', ');
-              details.push(`Item Split: ${items} (₹${sharedDebt.toFixed(2)})`);
-            }
+             // Find purchases where 'roommateName' paid and 'other' owes
+            const relevantPurchases = sharedPurchases.filter(p => {
+              if (p.payer !== roommateName) return false;
+              if (p.splitBetween && p.splitBetween.length > 0) {
+                return p.splitBetween.includes(other.name) && other.name !== roommateName;
+              }
+              return p.buyer === other.name && other.name !== roommateName;
+            });
+
+            relevantPurchases.forEach(p => {
+               let amountOwed = 0;
+               if (p.splitBetween && p.splitBetween.length > 0) {
+                 amountOwed = p.perPersonAmount ?? (p.amount / p.splitBetween.length);
+               } else {
+                 amountOwed = p.amount;
+               }
+               details.push(`Item Split: ${p.itemName} (₹${amountOwed.toFixed(2)})`);
+            });
           }
           
           // Adjustments from settlements
@@ -501,7 +616,27 @@ const App: React.FC = () => {
     // Get expenses made by this roommate
     const userExpenses = expenses.filter(e => e.name === roommateName && e.type !== ExpenseType.SETTLEMENT);
     const userSettlements = expenses.filter(e => e.name === roommateName && e.type === ExpenseType.SETTLEMENT);
+    // Get settlements received by this roommate (where they are the recipient/to)
+    const receivedSettlements = expenses.filter(e => {
+      if (e.type !== ExpenseType.SETTLEMENT) return false;
+      const to = e.to || (e.note?.match(/Settlement payment to (.+)/)?.[1]);
+      return to === roommateName;
+    });
     const userSharedPurchases = sharedPurchases.filter(p => p.buyer === roommateName || p.payer === roommateName);
+    
+    // Separate personal expenses (expenses with "Item:" but not in shared purchases)
+    const personalExpenses = userExpenses.filter(e => isPersonalExpense(e));
+    const sharedExpenses = userExpenses.filter(e => !isPersonalExpense(e));
+
+    // Calculate personal expenses total
+    const personalExpensesTotal = personalExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+    
+    // Calculate room/shared expenses total (from expenses + shared purchases with splitBetween)
+    const roomExpensesFromSharedPurchases = userSharedPurchases
+      .filter(p => p.splitBetween && p.splitBetween.length > 0 && p.payer === roommateName)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    const roomExpensesFromExpenses = sharedExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+    const roomExpensesTotal = roomExpensesFromSharedPurchases + roomExpensesFromExpenses;
 
     return {
       totalPaid,
@@ -509,8 +644,12 @@ const App: React.FC = () => {
       totalOwed,
       dueBreakdown,
       owedBreakdown,
-      expenses: userExpenses,
+      expenses: sharedExpenses,
+      personalExpenses: personalExpenses,
+      personalExpensesTotal,
+      roomExpensesTotal,
       settlements: userSettlements,
+      receivedSettlements: receivedSettlements,
       sharedPurchases: userSharedPurchases
     };
   };
@@ -619,7 +758,7 @@ const App: React.FC = () => {
                 <p className="text-lg font-light leading-relaxed">{aiInsight}</p>
               </div>
             )}
-            <SummaryStats expenses={expenses} fixedCosts={fixedRent + electricityBill} roommatesCount={roommates.length} />
+            <SummaryStats expenses={expenses} fixedCosts={fixedRent + electricityBill} roommatesCount={roommates.length} sharedPurchases={sharedPurchases} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <section className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                 <div className="flex items-center gap-2 mb-4 text-indigo-600">
@@ -658,6 +797,17 @@ const App: React.FC = () => {
                       <span className="font-bold text-emerald-600">₹{(fixedRent + electricityBill).toFixed(2)}</span>
                     </div>
                   </div>
+                  {roommates.length > 0 && (
+                    <div className="pt-2 border-t">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-500">Per Person ({roommates.length} roommates):</span>
+                        <span className="font-bold text-indigo-600">₹{((fixedRent + electricityBill) / roommates.length).toFixed(2)}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-400">
+                        Rent: ₹{(fixedRent / roommates.length).toFixed(2)} • Electricity: ₹{(electricityBill / roommates.length).toFixed(2)}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
             </div>
@@ -958,14 +1108,95 @@ const App: React.FC = () => {
                       <h2 className="text-2xl font-bold">{selectedRoommateForHistory}'s Payment History</h2>
                       <p className="text-indigo-100 text-sm mt-1">Complete financial overview</p>
                     </div>
-                    <button
-                      onClick={() => setSelectedRoommateForHistory(null)}
-                      className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                    >
-                      <X size={24} />
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {(historyFilterSearch || historyFilterStartDate || historyFilterEndDate) && (
+                        <button
+                          onClick={() => {
+                            setHistoryFilterSearch('');
+                            setHistoryFilterStartDate('');
+                            setHistoryFilterEndDate('');
+                          }}
+                          className="text-xs text-white/90 hover:text-white font-medium flex items-center gap-1 bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30 transition-colors"
+                        >
+                          <X size={14} />
+                          Clear Filters
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowHistoryFilters(!showHistoryFilters)}
+                        className="text-xs text-white/90 hover:text-white font-medium flex items-center gap-1 bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30 transition-colors"
+                      >
+                        <Filter size={14} />
+                        {showHistoryFilters ? 'Hide' : 'Show'} Filters
+                      </button>
+                      <button
+                        onClick={() => setSelectedRoommateForHistory(null)}
+                        className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                      >
+                        <X size={24} />
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                {/* Filters Section */}
+                {showHistoryFilters && (
+                  <div className="p-4 bg-gray-50 border-b border-gray-200">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                          <Search size={16} className="text-gray-400" />
+                          Search
+                        </label>
+                        <input
+                          type="text"
+                          value={historyFilterSearch}
+                          onChange={(e) => setHistoryFilterSearch(e.target.value)}
+                          placeholder="Search by amount, item, type..."
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                          <Calendar size={16} className="text-gray-400" />
+                          Start Date
+                        </label>
+                        <input
+                          type="date"
+                          value={historyFilterStartDate ? formatDateToYYYYMMDD(historyFilterStartDate) : ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value) {
+                              setHistoryFilterStartDate(formatDateToDDMMYYYY(value));
+                            } else {
+                              setHistoryFilterStartDate('');
+                            }
+                          }}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                          <Calendar size={16} className="text-gray-400" />
+                          End Date
+                        </label>
+                        <input
+                          type="date"
+                          value={historyFilterEndDate ? formatDateToYYYYMMDD(historyFilterEndDate) : ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value) {
+                              setHistoryFilterEndDate(formatDateToDDMMYYYY(value));
+                            } else {
+                              setHistoryFilterEndDate('');
+                            }
+                          }}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Content */}
                 <div className="overflow-y-auto flex-1 p-6 space-y-6">
@@ -994,6 +1225,72 @@ const App: React.FC = () => {
                       </div>
                       <div className="text-2xl font-bold text-green-900">₹{history.totalOwed.toFixed(2)}</div>
                       <div className="text-xs text-green-600 mt-1">Amount to receive</div>
+                    </div>
+                  </div>
+
+                  {/* Expense Breakdown: Personal vs Room */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                      <Receipt size={18} className="text-indigo-600" />
+                      Expense Breakdown
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Room Expenses */}
+                      <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-semibold text-indigo-700">Room Expenses</span>
+                        </div>
+                        <div className="text-2xl font-bold text-indigo-900 mb-2">₹{history.roomExpensesTotal.toFixed(2)}</div>
+                        <div className="text-xs text-indigo-600">Shared with roommates</div>
+                        <div className="mt-2 pt-2 border-t border-indigo-200">
+                          <div className="text-xs text-gray-600 space-y-1">
+                            {history.sharedPurchases
+                              .filter(p => p.splitBetween && p.splitBetween.length > 0 && p.payer === selectedRoommateForHistory)
+                              .map((purchase, idx) => (
+                                <div key={idx} className="flex items-start gap-2">
+                                  <span className="text-indigo-500">•</span>
+                                  <span className="text-gray-700">{purchase.itemName}: ₹{purchase.amount.toFixed(2)}</span>
+                                </div>
+                              ))}
+                            {history.expenses.length > 0 && history.expenses.map((expense, idx) => (
+                              <div key={idx} className="flex items-start gap-2">
+                                <span className="text-indigo-500">•</span>
+                                <span className="text-gray-700">{expense.type}: ₹{expense.amount.toFixed(2)}</span>
+                              </div>
+                            ))}
+                            {history.sharedPurchases.filter(p => p.splitBetween && p.splitBetween.length > 0 && p.payer === selectedRoommateForHistory).length === 0 && history.expenses.length === 0 && (
+                              <div className="text-gray-500 italic">No room expenses</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Personal Expenses */}
+                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-semibold text-blue-700">Personal Expenses</span>
+                        </div>
+                        <div className="text-2xl font-bold text-blue-900 mb-2">₹{(history.personalExpensesTotal || 0).toFixed(2)}</div>
+                        <div className="text-xs text-blue-600">Not split among roommates</div>
+                        <div className="mt-2 pt-2 border-t border-blue-200">
+                          <div className="text-xs text-gray-600 space-y-1">
+                            {history.personalExpenses && history.personalExpenses.length > 0 ? (
+                              history.personalExpenses.map((expense, idx) => {
+                                const itemMatch = expense.note?.match(/Item:\s*(.+?)(?:\s*-|$)/i);
+                                const itemName = itemMatch ? itemMatch[1].trim() : (expense.note || expense.type);
+                                return (
+                                  <div key={idx} className="flex items-start gap-2">
+                                    <span className="text-blue-500">•</span>
+                                    <span className="text-gray-700">{itemName}: ₹{expense.amount.toFixed(2)}</span>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="text-gray-500 italic">No personal expenses</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1089,15 +1386,104 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Expenses List */}
-                  {history.expenses.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-xl p-4">
-                      <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                        <Receipt size={18} className="text-indigo-600" />
-                        Expenses Paid ({history.expenses.length})
-                      </h3>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {history.expenses.map((expense) => (
+                  {/* Personal Expenses List */}
+                  {history.personalExpenses && history.personalExpenses.length > 0 && (() => {
+                    const filteredPersonalExpenses = history.personalExpenses.filter((expense) => {
+                      // Date filter
+                      const expenseDate = formatDateToDDMMYYYY(expense.date);
+                      if (!isDateInRange(expenseDate, historyFilterStartDate || null, historyFilterEndDate || null)) {
+                        return false;
+                      }
+
+                      // Search filter
+                      if (historyFilterSearch) {
+                        const query = historyFilterSearch.toLowerCase();
+                        const itemMatch = expense.note?.match(/Item:\s*(.+?)(?:\s*-|$)/i);
+                        const itemName = itemMatch ? itemMatch[1].trim().toLowerCase() : '';
+                        const matchesItem = itemName.includes(query);
+                        const matchesType = expense.type.toLowerCase().includes(query);
+                        const matchesAmount = expense.amount.toString().includes(query);
+                        const matchesNote = expense.note?.toLowerCase().includes(query) || false;
+                        
+                        if (!matchesItem && !matchesType && !matchesAmount && !matchesNote) {
+                          return false;
+                        }
+                      }
+
+                      return true;
+                    });
+
+                    return (
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                          <Users size={18} className="text-blue-600" />
+                          Personal Expenses ({filteredPersonalExpenses.length}{historyFilterSearch || historyFilterStartDate || historyFilterEndDate ? ` of ${history.personalExpenses.length}` : ''})
+                          <span className="text-xs font-normal text-gray-500 ml-2">(Not split among roommates)</span>
+                        </h3>
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                          {filteredPersonalExpenses.length > 0 ? (
+                            filteredPersonalExpenses.map((expense) => {
+                          const itemMatch = expense.note?.match(/Item:\s*(.+?)(?:\s*-|$)/i);
+                          const itemName = itemMatch ? itemMatch[1].trim() : null;
+                          return (
+                            <div key={expense.id} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-sm font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">
+                                    {itemName || expense.type}
+                                  </span>
+                                  <span className="text-sm font-bold text-gray-900">₹{expense.amount.toFixed(2)}</span>
+                                </div>
+                                <div className="text-xs text-gray-500">{expense.date} • {expense.paymode}</div>
+                                {expense.note && <div className="text-xs text-gray-400 italic mt-1">{expense.note}</div>}
+                              </div>
+                            </div>
+                          );
+                            })
+                          ) : (
+                            <div className="text-center py-4 text-gray-500 text-sm">
+                              No personal expenses match the current filters
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Shared Expenses List */}
+                  {history.expenses.length > 0 && (() => {
+                    const filteredExpenses = history.expenses.filter((expense) => {
+                      // Date filter
+                      const expenseDate = formatDateToDDMMYYYY(expense.date);
+                      if (!isDateInRange(expenseDate, historyFilterStartDate || null, historyFilterEndDate || null)) {
+                        return false;
+                      }
+
+                      // Search filter
+                      if (historyFilterSearch) {
+                        const query = historyFilterSearch.toLowerCase();
+                        const matchesType = expense.type.toLowerCase().includes(query);
+                        const matchesAmount = expense.amount.toString().includes(query);
+                        const matchesNote = expense.note?.toLowerCase().includes(query) || false;
+                        
+                        if (!matchesType && !matchesAmount && !matchesNote) {
+                          return false;
+                        }
+                      }
+
+                      return true;
+                    });
+
+                    return (
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                          <Receipt size={18} className="text-indigo-600" />
+                          Shared Expenses ({filteredExpenses.length}{historyFilterSearch || historyFilterStartDate || historyFilterEndDate ? ` of ${history.expenses.length}` : ''})
+                          <span className="text-xs font-normal text-gray-500 ml-2">(Split among roommates)</span>
+                        </h3>
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                          {filteredExpenses.length > 0 ? (
+                            filteredExpenses.map((expense) => (
                           <div key={expense.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
@@ -1109,21 +1495,64 @@ const App: React.FC = () => {
                               <div className="text-xs text-gray-500">{expense.date} • {expense.paymode}</div>
                               {expense.note && <div className="text-xs text-gray-400 italic mt-1">{expense.note}</div>}
                             </div>
-                          </div>
-                        ))}
+                            </div>
+                          ))
+                          ) : (
+                            <div className="text-center py-4 text-gray-500 text-sm">
+                              No shared expenses match the current filters
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Settlements List */}
-                  {history.settlements.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-xl p-4">
-                      <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                        <CreditCard size={18} className="text-purple-600" />
-                        Settlements ({history.settlements.length})
-                      </h3>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {history.settlements.map((settlement) => (
+                  {(history.settlements.length > 0 || (history.receivedSettlements && history.receivedSettlements.length > 0)) && (() => {
+                    const filteredSettlements = history.settlements.filter((settlement) => {
+                      const settlementDate = formatDateToDDMMYYYY(settlement.date);
+                      if (!isDateInRange(settlementDate, historyFilterStartDate || null, historyFilterEndDate || null)) {
+                        return false;
+                      }
+                      if (historyFilterSearch) {
+                        const query = historyFilterSearch.toLowerCase();
+                        const matchesTo = settlement.to?.toLowerCase().includes(query) || false;
+                        const matchesAmount = settlement.amount.toString().includes(query);
+                        const matchesNote = settlement.note?.toLowerCase().includes(query) || false;
+                        if (!matchesTo && !matchesAmount && !matchesNote) return false;
+                      }
+                      return true;
+                    });
+
+                    const filteredReceivedSettlements = history.receivedSettlements?.filter((settlement) => {
+                      const settlementDate = formatDateToDDMMYYYY(settlement.date);
+                      if (!isDateInRange(settlementDate, historyFilterStartDate || null, historyFilterEndDate || null)) {
+                        return false;
+                      }
+                      if (historyFilterSearch) {
+                        const query = historyFilterSearch.toLowerCase();
+                        const matchesFrom = settlement.name?.toLowerCase().includes(query) || false;
+                        const matchesAmount = settlement.amount.toString().includes(query);
+                        const matchesNote = settlement.note?.toLowerCase().includes(query) || false;
+                        if (!matchesFrom && !matchesAmount && !matchesNote) return false;
+                      }
+                      return true;
+                    }) || [];
+
+                    const totalFiltered = filteredSettlements.length + filteredReceivedSettlements.length;
+                    const totalOriginal = history.settlements.length + (history.receivedSettlements?.length || 0);
+
+                    return (
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                          <CreditCard size={18} className="text-purple-600" />
+                          Settlements ({totalFiltered}{historyFilterSearch || historyFilterStartDate || historyFilterEndDate ? ` of ${totalOriginal}` : ''})
+                        </h3>
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                          {totalFiltered > 0 ? (
+                            <>
+                              {/* Settlements Made (Payments by this person) */}
+                              {filteredSettlements.map((settlement) => (
                           <div key={settlement.id} className="flex items-center justify-between p-2 bg-purple-50 rounded-lg">
                             <div className="flex-1">
                               <div className="text-sm font-medium text-gray-800">
@@ -1133,21 +1562,60 @@ const App: React.FC = () => {
                               {settlement.note && <div className="text-xs text-gray-400 italic mt-1">{settlement.note}</div>}
                             </div>
                             <span className="font-bold text-purple-700">₹{settlement.amount.toFixed(2)}</span>
-                          </div>
-                        ))}
+                              </div>
+                              ))}
+                              {/* Settlements Received (Payments to this person) */}
+                              {filteredReceivedSettlements.map((settlement) => (
+                          <div key={settlement.id} className="flex items-center justify-between p-2 bg-green-50 rounded-lg border border-green-200">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-gray-800">
+                                Payment from {settlement.name}
+                              </div>
+                              <div className="text-xs text-gray-500">{settlement.date} • {settlement.paymode}</div>
+                              {settlement.note && <div className="text-xs text-gray-400 italic mt-1">{settlement.note}</div>}
+                            </div>
+                            <span className="font-bold text-green-700">₹{settlement.amount.toFixed(2)}</span>
+                              </div>
+                              ))}
+                            </>
+                          ) : (
+                            <div className="text-center py-4 text-gray-500 text-sm">
+                              No settlements match the current filters
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Shared Purchases */}
-                  {history.sharedPurchases.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-xl p-4">
-                      <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                        <Users size={18} className="text-orange-600" />
-                        Shared Purchases ({history.sharedPurchases.length})
-                      </h3>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {history.sharedPurchases.map((purchase) => (
+                  {history.sharedPurchases.length > 0 && (() => {
+                    const filteredPurchases = history.sharedPurchases.filter((purchase) => {
+                      const purchaseDate = formatDateToDDMMYYYY(purchase.date);
+                      if (!isDateInRange(purchaseDate, historyFilterStartDate || null, historyFilterEndDate || null)) {
+                        return false;
+                      }
+                      if (historyFilterSearch) {
+                        const query = historyFilterSearch.toLowerCase();
+                        const matchesItem = purchase.itemName.toLowerCase().includes(query);
+                        const matchesAmount = purchase.amount.toString().includes(query);
+                        const matchesBuyer = purchase.buyer.toLowerCase().includes(query);
+                        const matchesPayer = purchase.payer.toLowerCase().includes(query);
+                        const matchesNote = purchase.note?.toLowerCase().includes(query) || false;
+                        if (!matchesItem && !matchesAmount && !matchesBuyer && !matchesPayer && !matchesNote) return false;
+                      }
+                      return true;
+                    });
+
+                    return (
+                      <div className="bg-white border border-gray-200 rounded-xl p-4">
+                        <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                          <Users size={18} className="text-orange-600" />
+                          Shared Purchases ({filteredPurchases.length}{historyFilterSearch || historyFilterStartDate || historyFilterEndDate ? ` of ${history.sharedPurchases.length}` : ''})
+                        </h3>
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                          {filteredPurchases.length > 0 ? (
+                            filteredPurchases.map((purchase) => (
                           <div key={purchase.id} className="flex items-center justify-between p-2 bg-orange-50 rounded-lg">
                             <div className="flex-1">
                               <div className="text-sm font-medium text-gray-800">{purchase.itemName}</div>
@@ -1162,13 +1630,19 @@ const App: React.FC = () => {
                             </div>
                             <span className="font-bold text-orange-700">₹{purchase.amount.toFixed(2)}</span>
                           </div>
-                        ))}
+                            ))
+                          ) : (
+                            <div className="text-center py-4 text-gray-500 text-sm">
+                              No shared purchases match the current filters
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Empty State */}
-                  {history.expenses.length === 0 && history.settlements.length === 0 && history.sharedPurchases.length === 0 && (
+                  {(!history.personalExpenses || history.personalExpenses.length === 0) && history.expenses.length === 0 && history.settlements.length === 0 && (!history.receivedSettlements || history.receivedSettlements.length === 0) && history.sharedPurchases.length === 0 && (
                     <div className="text-center py-8 text-gray-500">
                       <Users size={48} className="mx-auto text-gray-300 mb-4" />
                       <p>No payment history found for {selectedRoommateForHistory}</p>

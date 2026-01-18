@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Calculator, ShoppingBag, ArrowRight, X } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Plus, Trash2, Calculator, ShoppingBag, ArrowRight, X, Filter, Search, Calendar } from 'lucide-react';
 import { SharedPurchase, Roommate, ExpenseType, PayMode } from '../types';
-import { formatDateToDDMMYYYY } from '../utils/dateUtils';
+import { formatDateToDDMMYYYY, formatDateToYYYYMMDD, isDateInRange } from '../utils/dateUtils';
 
 interface ItemSplitCalculatorProps {
   roommates: Roommate[];
@@ -32,12 +32,85 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
   const [paymode, setPaymode] = useState<PayMode>(PayMode.UPI);
   const [note, setNote] = useState('');
   const [splitBetween, setSplitBetween] = useState<string[]>([]);
+  
+  // Filter states
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [filterType, setFilterType] = useState<string>('all'); // 'all', 'split', 'non-split'
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Convert dates for filtering (convert DD-MM-YYYY to YYYY-MM-DD for input)
+  const startDateInput = startDate ? formatDateToYYYYMMDD(startDate) : '';
+  const endDateInput = endDate ? formatDateToYYYYMMDD(endDate) : '';
+
+  // Filter purchases
+  const filteredPurchases = useMemo(() => {
+    return purchases.filter(purchase => {
+      // Date range filter
+      const purchaseDate = formatDateToDDMMYYYY(purchase.date);
+      if (!isDateInRange(purchaseDate, startDate || null, endDate || null)) {
+        return false;
+      }
+
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesBuyer = purchase.buyer.toLowerCase().includes(query);
+        const matchesPayer = purchase.payer.toLowerCase().includes(query);
+        const matchesItem = purchase.itemName.toLowerCase().includes(query);
+        const matchesNote = purchase.note?.toLowerCase().includes(query) || false;
+        const matchesAmount = purchase.amount.toString().includes(query);
+        const matchesSplitBetween = (purchase.splitBetween || []).some(n => n.toLowerCase().includes(query));
+        if (!matchesBuyer && !matchesPayer && !matchesItem && !matchesNote && !matchesAmount && !matchesSplitBetween) {
+          return false;
+        }
+      }
+
+      // Filter by split type
+      if (filterType === 'split' && (!purchase.splitBetween || purchase.splitBetween.length === 0)) {
+        return false;
+      }
+      if (filterType === 'non-split' && purchase.splitBetween && purchase.splitBetween.length > 0) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [purchases, startDate, endDate, searchQuery, filterType]);
+
+  const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value) {
+      setStartDate(formatDateToDDMMYYYY(value));
+    } else {
+      setStartDate('');
+    }
+  };
+
+  const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value) {
+      setEndDate(formatDateToDDMMYYYY(value));
+    } else {
+      setEndDate('');
+    }
+  };
+
+  const clearFilters = () => {
+    setStartDate('');
+    setEndDate('');
+    setSearchQuery('');
+    setFilterType('all');
+  };
+
+  const hasActiveFilters = startDate || endDate || searchQuery || filterType !== 'all';
 
   // Calculate settlements
   const calculateSettlements = () => {
     const debts: Map<string, Map<string, number>> = new Map();
 
-    purchases.forEach((purchase) => {
+    filteredPurchases.forEach((purchase) => {
       // Calculate the amount each person owes
       let amountPerPerson = purchase.amount;
       let splitCount = 1;
@@ -76,7 +149,7 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
     const instructions: Array<{ from: string; to: string; amount: number; items: string[] }> = [];
     const itemMap: Map<string, Map<string, string[]>> = new Map();
 
-    purchases.forEach((purchase) => {
+    filteredPurchases.forEach((purchase) => {
       let amountPerPerson = purchase.amount;
       let splitCount = 1;
       
@@ -192,7 +265,7 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
   };
 
   const settlements = calculateSettlements();
-  const totalAmount = purchases.reduce((sum, p) => sum + p.amount, 0);
+  const totalAmount = filteredPurchases.reduce((sum, p) => sum + p.amount, 0);
 
   return (
     <div className="space-y-6">
@@ -383,11 +456,113 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
         </form>
       </div>
 
+      {/* Filters Section */}
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <Filter size={20} className="text-indigo-600" />
+            Filters
+          </h3>
+          <div className="flex items-center gap-2">
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
+              >
+                <X size={14} />
+                Clear Filters
+              </button>
+            )}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+            >
+              {showFilters ? 'Hide' : 'Show'} Filters
+            </button>
+          </div>
+        </div>
+
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-gray-200">
+            {/* Search Filter */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                <Search size={16} className="text-gray-400" />
+                Search
+              </label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by item, buyer, payer, amount..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Start Date Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                <Calendar size={16} className="text-gray-400" />
+                Start Date
+              </label>
+              <input
+                type="date"
+                value={startDateInput}
+                onChange={handleStartDateChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* End Date Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                <Calendar size={16} className="text-gray-400" />
+                End Date
+              </label>
+              <input
+                type="date"
+                value={endDateInput}
+                onChange={handleEndDateChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Filter Type */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Filter Type
+              </label>
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="all">All Items</option>
+                <option value="split">Split Items Only</option>
+                <option value="non-split">Non-Split Items Only</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {hasActiveFilters && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="text-xs text-gray-600">
+              Showing {filteredPurchases.length} of {purchases.length} purchase(s)
+              {searchQuery && ` matching "${searchQuery}"`}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
           <div className="text-sm text-blue-600 font-medium">Total Items</div>
-          <div className="text-2xl font-bold text-blue-900">{purchases.length}</div>
+          <div className="text-2xl font-bold text-blue-900">{filteredPurchases.length}</div>
+          {hasActiveFilters && (
+            <div className="text-xs text-blue-500 mt-1">of {purchases.length} total</div>
+          )}
         </div>
         <div className="bg-green-50 p-4 rounded-xl border border-green-200">
           <div className="text-sm text-green-600 font-medium">Total Amount</div>
@@ -400,11 +575,18 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
       </div>
 
       {/* Purchases List */}
-      {purchases.length > 0 && (
+      {filteredPurchases.length > 0 && (
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">All Purchases</h3>
-          <div className="space-y-3">
-            {purchases.map((purchase) => (
+          <h3 className="text-lg font-bold text-gray-800 mb-4">
+            All Purchases
+            {hasActiveFilters && (
+              <span className="text-sm text-gray-500 font-normal ml-2">
+                ({filteredPurchases.length} of {purchases.length})
+              </span>
+            )}
+          </h3>
+          <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+            {filteredPurchases.map((purchase) => (
               <div
                 key={purchase.id}
                 className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
@@ -461,7 +643,7 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
             <Calculator size={20} className="text-indigo-600" />
             Settlement Instructions
           </h3>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
             {settlements.map((settlement, idx) => (
               <div
                 key={idx}
@@ -510,13 +692,32 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
       )}
 
       {/* Empty State */}
-      {purchases.length === 0 && (
+      {filteredPurchases.length === 0 && (
         <div className="bg-gray-50 p-12 rounded-xl border-2 border-dashed border-gray-300 text-center">
           <ShoppingBag size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-600 font-medium">No purchases added yet</p>
-          <p className="text-sm text-gray-500 mt-2">
-            Add your first item purchase above to get started
-          </p>
+          {purchases.length === 0 ? (
+            <>
+              <p className="text-gray-600 font-medium">No purchases added yet</p>
+              <p className="text-sm text-gray-500 mt-2">
+                Add your first item purchase above to get started
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-600 font-medium">No purchases match the current filters</p>
+              <p className="text-sm text-gray-500 mt-2">
+                Try adjusting your search or date filters
+              </p>
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+                >
+                  Clear Filters
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

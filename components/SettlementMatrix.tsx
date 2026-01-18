@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Roommate, Expense, ExpenseType, PayMode, SharedPurchase } from '../types';
-import { CheckCircle2, Circle, ArrowRight, CreditCard, Send, TrendingUp, Calendar, ChevronDown, ChevronUp, Filter, X, User, XCircle, Users } from 'lucide-react';
+import { CheckCircle2, Circle, ArrowRight, CreditCard, Send, TrendingUp, Calendar, ChevronDown, ChevronUp, Filter, X, User, XCircle, Users, Search } from 'lucide-react';
 import { formatDateToDDMMYYYY, formatDateToYYYYMMDD, isDateInRange, getUniqueMonths, filterExpensesByMonth, getMonthYear } from '../utils/dateUtils';
 
 interface SettlementMatrixProps {
@@ -20,6 +20,14 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
   const [endDate, setEndDate] = useState<string>('');
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [paymentFilterSearch, setPaymentFilterSearch] = useState<string>('');
+  const [paymentFilterTo, setPaymentFilterTo] = useState<string>('all');
+  const [paymentFilterStartDate, setPaymentFilterStartDate] = useState<string>('');
+  const [paymentFilterEndDate, setPaymentFilterEndDate] = useState<string>('');
+  const [showPaymentFilters, setShowPaymentFilters] = useState(false);
+  const [receiveFilterSearch, setReceiveFilterSearch] = useState<string>('');
+  const [receiveFilterFrom, setReceiveFilterFrom] = useState<string>('all');
+  const [showReceiveFilters, setShowReceiveFilters] = useState(false);
 
   if (roommates.length === 0) return <div className="p-8 text-center text-gray-500 text-lg italic">Add roommates to see the settlement matrix.</div>;
 
@@ -666,12 +674,193 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
                 {userSettlements.length > 0 ? (
                   <>
                     <div className="mb-4">
-                      <h5 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-                        <ArrowRight size={16} className="text-rose-500" />
-                        Payments {selectedUser} Needs to Make:
-                      </h5>
-                      <div className="space-y-3">
-                        {userSettlements.map((inst, idx) => (
+                      <div className="flex items-center justify-between mb-3">
+                        <h5 className="text-sm font-bold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+                          <ArrowRight size={16} className="text-rose-500" />
+                          Payments {selectedUser} Needs to Make:
+                        </h5>
+                        <div className="flex items-center gap-2">
+                          {(paymentFilterSearch || paymentFilterTo !== 'all' || paymentFilterStartDate || paymentFilterEndDate) && (
+                            <button
+                              onClick={() => {
+                                setPaymentFilterSearch('');
+                                setPaymentFilterTo('all');
+                                setPaymentFilterStartDate('');
+                                setPaymentFilterEndDate('');
+                              }}
+                              className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
+                            >
+                              <X size={14} />
+                              Clear Filters
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setShowPaymentFilters(!showPaymentFilters)}
+                            className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+                          >
+                            <Filter size={14} />
+                            {showPaymentFilters ? 'Hide' : 'Show'} Filters
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Filters Section */}
+                      {showPaymentFilters && (
+                        <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                                <Search size={16} className="text-gray-400" />
+                                Search
+                              </label>
+                              <input
+                                type="text"
+                                value={paymentFilterSearch}
+                                onChange={(e) => setPaymentFilterSearch(e.target.value)}
+                                placeholder="Search by person, amount, items..."
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Filter by Person to Pay
+                              </label>
+                              <select
+                                value={paymentFilterTo}
+                                onChange={(e) => setPaymentFilterTo(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                              >
+                                <option value="all">All People</option>
+                                {roommates.map((r) => (
+                                  <option key={r.id} value={r.name}>
+                                    {r.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                                <Calendar size={16} className="text-gray-400" />
+                                Start Date
+                              </label>
+                              <input
+                                type="date"
+                                value={paymentFilterStartDate ? formatDateToYYYYMMDD(paymentFilterStartDate) : ''}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value) {
+                                    setPaymentFilterStartDate(formatDateToDDMMYYYY(value));
+                                  } else {
+                                    setPaymentFilterStartDate('');
+                                  }
+                                }}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                                <Calendar size={16} className="text-gray-400" />
+                                End Date
+                              </label>
+                              <input
+                                type="date"
+                                value={paymentFilterEndDate ? formatDateToYYYYMMDD(paymentFilterEndDate) : ''}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value) {
+                                    setPaymentFilterEndDate(formatDateToDDMMYYYY(value));
+                                  } else {
+                                    setPaymentFilterEndDate('');
+                                  }
+                                }}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Filtered and Scrollable Payments List */}
+                      {(() => {
+                        const filteredSettlements = userSettlements.filter((inst) => {
+                          // Filter by person to pay
+                          if (paymentFilterTo !== 'all' && inst.to !== paymentFilterTo) {
+                            return false;
+                          }
+
+                          // Date filter - check if any related expenses/purchases fall in date range
+                          if (paymentFilterStartDate || paymentFilterEndDate) {
+                            const creditorName = inst.to;
+                            let hasDateMatch = false;
+
+                            // Check expenses by the creditor that fall in date range
+                            const matchingExpenses = expenses.filter(e => 
+                              e.name === creditorName && 
+                              e.type !== ExpenseType.SETTLEMENT &&
+                              isDateInRange(
+                                formatDateToDDMMYYYY(e.date),
+                                paymentFilterStartDate || null,
+                                paymentFilterEndDate || null
+                              )
+                            );
+
+                            // Check purchases where payer is the creditor that fall in date range
+                            const matchingPurchases = sharedPurchases.filter(p => 
+                              p.payer === creditorName &&
+                              isDateInRange(
+                                formatDateToDDMMYYYY(p.date),
+                                paymentFilterStartDate || null,
+                                paymentFilterEndDate || null
+                              )
+                            );
+
+                            hasDateMatch = matchingExpenses.length > 0 || matchingPurchases.length > 0;
+
+                            if (!hasDateMatch) {
+                              return false;
+                            }
+                          }
+
+                          // Search filter
+                          if (paymentFilterSearch) {
+                            const query = paymentFilterSearch.toLowerCase();
+                            const matchesTo = inst.to.toLowerCase().includes(query);
+                            const matchesAmount = inst.amount.toString().includes(query);
+                            const matchesItems = inst.expenseDetails?.some(detail => 
+                              detail.items?.some(item => item.toLowerCase().includes(query))
+                            ) || false;
+                            const matchesType = inst.expenseDetails?.some(detail => 
+                              detail.type.toLowerCase().includes(query)
+                            ) || false;
+
+                            if (!matchesTo && !matchesAmount && !matchesItems && !matchesType) {
+                              return false;
+                            }
+                          }
+
+                          return true;
+                        });
+
+                        return (
+                          <>
+                            {filteredSettlements.length === 0 && (paymentFilterSearch || paymentFilterTo !== 'all' || paymentFilterStartDate || paymentFilterEndDate) ? (
+                              <div className="text-center py-4 bg-gray-50 rounded-lg border border-gray-200">
+                                <p className="text-gray-500 text-sm">No payments match the current filters</p>
+                                <button
+                                  onClick={() => {
+                                    setPaymentFilterSearch('');
+                                    setPaymentFilterTo('all');
+                                    setPaymentFilterStartDate('');
+                                    setPaymentFilterEndDate('');
+                                  }}
+                                  className="mt-2 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                                >
+                                  Clear Filters
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                                {filteredSettlements.map((inst, idx) => (
                           <div key={idx} className="bg-gray-50 p-4 rounded-lg border border-gray-200 hover:border-indigo-300 transition-all">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3">
@@ -715,8 +904,17 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
                               </div>
                             </div>
                           </div>
-                        ))}
-                      </div>
+                                ))}
+                              </div>
+                            )}
+                            {(paymentFilterSearch || paymentFilterTo !== 'all' || paymentFilterStartDate || paymentFilterEndDate) && (
+                              <div className="mt-2 text-xs text-gray-600">
+                                Showing {filteredSettlements.length} of {userSettlements.length} payment(s)
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </>
                 ) : (
@@ -730,12 +928,118 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
 
                 {owedToUser.length > 0 && (
                   <div className="mt-6 pt-6 border-t border-gray-200">
-                    <h5 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-                      <ArrowRight size={16} className="text-emerald-500 rotate-180" />
-                      Payments {selectedUser} Will Receive:
-                    </h5>
-                    <div className="space-y-3">
-                      {owedToUser.map((inst, idx) => (
+                    <div className="flex items-center justify-between mb-3">
+                      <h5 className="text-sm font-bold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+                        <ArrowRight size={16} className="text-emerald-500 rotate-180" />
+                        Payments {selectedUser} Will Receive:
+                      </h5>
+                      <div className="flex items-center gap-2">
+                        {(receiveFilterSearch || receiveFilterFrom !== 'all') && (
+                          <button
+                            onClick={() => {
+                              setReceiveFilterSearch('');
+                              setReceiveFilterFrom('all');
+                            }}
+                            className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
+                          >
+                            <X size={14} />
+                            Clear Filters
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setShowReceiveFilters(!showReceiveFilters)}
+                          className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+                        >
+                          <Filter size={14} />
+                          {showReceiveFilters ? 'Hide' : 'Show'} Filters
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Filters Section */}
+                    {showReceiveFilters && (
+                      <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                              <Search size={16} className="text-gray-400" />
+                              Search
+                            </label>
+                            <input
+                              type="text"
+                              value={receiveFilterSearch}
+                              onChange={(e) => setReceiveFilterSearch(e.target.value)}
+                              placeholder="Search by person, amount, items..."
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Filter by Person Paying
+                            </label>
+                            <select
+                              value={receiveFilterFrom}
+                              onChange={(e) => setReceiveFilterFrom(e.target.value)}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                            >
+                              <option value="all">All People</option>
+                              {roommates.map((r) => (
+                                <option key={r.id} value={r.name}>
+                                  {r.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Filtered and Scrollable Payments List */}
+                    {(() => {
+                      const filteredReceives = owedToUser.filter((inst) => {
+                        // Filter by person paying
+                        if (receiveFilterFrom !== 'all' && inst.from !== receiveFilterFrom) {
+                          return false;
+                        }
+
+                        // Search filter
+                        if (receiveFilterSearch) {
+                          const query = receiveFilterSearch.toLowerCase();
+                          const matchesFrom = inst.from.toLowerCase().includes(query);
+                          const matchesAmount = inst.amount.toString().includes(query);
+                          const matchesItems = inst.expenseDetails?.some(detail => 
+                            detail.items?.some(item => item.toLowerCase().includes(query))
+                          ) || false;
+                          const matchesType = inst.expenseDetails?.some(detail => 
+                            detail.type.toLowerCase().includes(query)
+                          ) || false;
+
+                          if (!matchesFrom && !matchesAmount && !matchesItems && !matchesType) {
+                            return false;
+                          }
+                        }
+
+                        return true;
+                      });
+
+                      return (
+                        <>
+                          {filteredReceives.length === 0 && (receiveFilterSearch || receiveFilterFrom !== 'all') ? (
+                            <div className="text-center py-4 bg-gray-50 rounded-lg border border-gray-200">
+                              <p className="text-gray-500 text-sm">No payments match the current filters</p>
+                              <button
+                                onClick={() => {
+                                  setReceiveFilterSearch('');
+                                  setReceiveFilterFrom('all');
+                                }}
+                                className="mt-2 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                              >
+                                Clear Filters
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                              {filteredReceives.map((inst, idx) => (
                         <div key={idx} className="bg-emerald-50 p-4 rounded-lg border border-emerald-200 hover:border-emerald-300 transition-all">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -779,8 +1083,17 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
                             </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                              ))}
+                            </div>
+                          )}
+                          {(receiveFilterSearch || receiveFilterFrom !== 'all') && (
+                            <div className="mt-2 text-xs text-gray-600">
+                              Showing {filteredReceives.length} of {owedToUser.length} payment(s)
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
