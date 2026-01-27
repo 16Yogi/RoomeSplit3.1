@@ -7,6 +7,7 @@ import { formatDateToDDMMYYYY } from '../utils/dateUtils';
 interface ExpenseListProps {
   expenses: Expense[];
   onDelete: (id: string) => void;
+  isLoggedIn?: boolean;
 }
 
 const getIcon = (type: ExpenseType) => {
@@ -21,7 +22,7 @@ const getIcon = (type: ExpenseType) => {
   }
 };
 
-const ExpenseList: React.FC<ExpenseListProps> = ({ expenses, onDelete }) => {
+const ExpenseList: React.FC<ExpenseListProps> = ({ expenses, onDelete, isLoggedIn = false }) => {
   if (expenses.length === 0) {
     return (
       <div className="p-12 text-center">
@@ -52,14 +53,16 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ expenses, onDelete }) => {
             <span className={`font-bold text-lg ${expense.type === ExpenseType.SETTLEMENT ? 'text-indigo-600' : 'text-gray-900'}`}>
               ₹{expense.amount.toFixed(2)}
             </span>
-            <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={() => onDelete(expense.id)}
-                className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg"
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
+            {isLoggedIn && (
+              <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => onDelete(expense.id)}
+                  className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       ))}

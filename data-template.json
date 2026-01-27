@@ -1,18 +1,22 @@
 {
   "version": "1.0.0",
-  "exportDate": "2026-01-18T11:35:28.231Z",
+  "exportDate": "2026-01-27T11:10:26.578Z",
+  "auth": {
+    "username": "admin",
+    "password": "admin123"
+  },
   "roommates": [
     {
       "id": "1768454433168",
       "name": "pawan"
     },
     {
-      "id": "1768454436296",
-      "name": "melu"
-    },
-    {
       "id": "1768454439668",
       "name": "yogi"
+    },
+    {
+      "id": "1769512226578",
+      "name": "melu"
     }
   ],
   "expenses": [
@@ -100,7 +104,7 @@
   "metadata": {
     "totalExpenses": 3000,
     "totalRoommates": 3,
-    "lastUpdated": "2026-01-18T11:35:28.231Z"
+    "lastUpdated": "2026-01-27T11:10:26.578Z"
   },
   "sharedPurchases": [
     {

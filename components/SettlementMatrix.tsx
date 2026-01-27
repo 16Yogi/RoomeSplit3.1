@@ -11,9 +11,10 @@ interface SettlementMatrixProps {
   onTogglePaid: (id: string) => void;
   onAddExpense: (expense: Omit<Expense, 'id'>) => void;
   fixedCosts: number;
+  isLoggedIn?: boolean;
 }
 
-const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses, sharedPurchases = [], paidRoommateIds, onTogglePaid, onAddExpense, fixedCosts }) => {
+const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses, sharedPurchases = [], paidRoommateIds, onTogglePaid, onAddExpense, fixedCosts, isLoggedIn = false }) => {
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState<string>('');
   const [startDate, setStartDate] = useState<string>('');
@@ -499,7 +500,7 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
           </h3>
           <div className="space-y-4">
             {uniqueMonths.map(month => {
-              const monthExpenses = filterExpensesByMonth(expenses, month);
+              const monthExpenses: Expense[] = filterExpensesByMonth(expenses, month);
               const monthPurchases = sharedPurchases.filter(purchase => {
                 const purchaseMonth = getMonthYear(purchase.date);
                 return purchaseMonth === month;
@@ -1154,10 +1155,20 @@ const SettlementMatrix: React.FC<SettlementMatrixProps> = ({ roommates, expenses
                     {!isRecording ? (
                       <button 
                         onClick={() => {
+                          if (!isLoggedIn) {
+                            alert('Please login to record payments');
+                            return;
+                          }
                           setRecordingId(`${inst.from}-${inst.to}`);
                           setPayAmount(inst.amount.toFixed(2));
                         }}
-                        className="w-full py-2 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2"
+                        disabled={!isLoggedIn}
+                        className={`w-full py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                          !isLoggedIn
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white'
+                        }`}
+                        title={!isLoggedIn ? 'Please login to record payments' : ''}
                       >
                         <CreditCard size={14} />
                         PAY NOW

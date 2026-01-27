@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, PieChart, Users, Receipt, CreditCard, Sparkles, Download, CheckCircle2, RotateCcw, Eraser, Save, Menu, Upload, FileJson, Settings, X, ArrowRight, TrendingUp, TrendingDown, Filter, Search, Calendar } from 'lucide-react';
+import { Plus, Trash2, PieChart, Users, Receipt, CreditCard, Sparkles, Download, CheckCircle2, RotateCcw, Eraser, Save, Menu, Upload, FileJson, Settings, X, ArrowRight, TrendingUp, TrendingDown, Filter, Search, Calendar, LogOut, LogIn } from 'lucide-react';
 import { Expense, ExpenseType, Roommate, SharedPurchase } from './types';
 import SettlementMatrix from './components/SettlementMatrix';
 import ExpenseList from './components/ExpenseList';
@@ -7,6 +7,7 @@ import SummaryStats from './components/SummaryStats';
 import BillingHistory from './components/BillingHistory';
 import Sidebar from './components/Sidebar';
 import ItemSplitCalculator from './components/ItemSplitCalculator';
+import Login from './components/Login';
 import { GoogleGenAI } from "@google/genai";
 import * as XLSX from 'xlsx';
 import { generateJSONData, exportToJSONFile, importFromJSONFile } from './utils/dataStorage';
@@ -46,6 +47,39 @@ const App: React.FC = () => {
   const [historyFilterEndDate, setHistoryFilterEndDate] = useState<string>('');
   const [showHistoryFilters, setShowHistoryFilters] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Authentication state
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    const saved = localStorage.getItem('isLoggedIn');
+    return saved === 'true';
+  });
+  const [showLogin, setShowLogin] = useState<boolean>(false);
+  const [authCredentials, setAuthCredentials] = useState<{ username: string; password: string } | null>(null);
+
+  // Load authentication credentials and data from API on mount
+  useEffect(() => {
+    const loadAuthAndData = async () => {
+      try {
+        const data = await dataAPI.getAll();
+        if (data.auth) {
+          setAuthCredentials(data.auth);
+        }
+      } catch (error) {
+        console.error('Failed to load auth credentials:', error);
+        // Fallback: try to load from data-template.json directly
+        try {
+          const response = await fetch('/data-template.json');
+          const templateData = await response.json();
+          if (templateData.auth) {
+            setAuthCredentials(templateData.auth);
+          }
+        } catch (fetchError) {
+          console.error('Failed to load auth from template:', fetchError);
+        }
+      }
+    };
+    loadAuthAndData();
+  }, []);
 
   // Load data from API on mount
   useEffect(() => {
@@ -102,6 +136,7 @@ const App: React.FC = () => {
   }, [fixedRent, electricityBill]);
 
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
+    if (!canEdit()) return;
     try {
       const newExpense = await expensesAPI.add(expense);
       setExpenses(prev => [newExpense, ...prev]);
@@ -112,6 +147,7 @@ const App: React.FC = () => {
   };
 
   const deleteExpense = async (id: string) => {
+    if (!canEdit()) return;
     if (window.confirm("Delete this transaction?")) {
       try {
         await expensesAPI.delete(id);
@@ -124,6 +160,7 @@ const App: React.FC = () => {
   };
 
   const addSharedPurchase = async (purchase: Omit<SharedPurchase, 'id'>) => {
+    if (!canEdit()) return;
     try {
       const newPurchase = await sharedPurchasesAPI.add(purchase);
       setSharedPurchases(prev => [newPurchase, ...prev]);
@@ -134,6 +171,7 @@ const App: React.FC = () => {
   };
 
   const deleteSharedPurchase = async (id: string) => {
+    if (!canEdit()) return;
     try {
       await sharedPurchasesAPI.delete(id);
       setSharedPurchases(prev => prev.filter(p => p.id !== id));
@@ -144,6 +182,7 @@ const App: React.FC = () => {
   };
 
   const addRoommate = async (name: string) => {
+    if (!canEdit()) return;
     if (!name.trim()) return;
     
     try {
@@ -157,6 +196,7 @@ const App: React.FC = () => {
   };
 
   const removeRoommate = async (id: string) => {
+    if (!canEdit()) return;
     if (window.confirm("Remove this roommate? This will affect settlement calculations.")) {
       try {
         await roommatesAPI.delete(id);
@@ -171,6 +211,7 @@ const App: React.FC = () => {
 
   const handleSaveFixedCosts = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit()) return;
     setIsSavingFixed(true);
     
     try {
@@ -229,6 +270,7 @@ const App: React.FC = () => {
   };
 
   const handleImportJSON = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canEdit()) return;
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -269,6 +311,7 @@ const App: React.FC = () => {
   };
 
   const clearAllData = async () => {
+    if (!canEdit()) return;
     if (window.confirm(
       "This will reset fixed costs (rent & electricity) and paid statuses.\n\n" +
       "✓ Billing history will be preserved\n" +
@@ -686,6 +729,32 @@ const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Authentication handlers
+  const handleLogin = (username: string, password: string): boolean => {
+    if (authCredentials && username === authCredentials.username && password === authCredentials.password) {
+      setIsLoggedIn(true);
+      setShowLogin(false);
+      localStorage.setItem('isLoggedIn', 'true');
+      return true;
+    }
+    return false;
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setShowLogin(false);
+    localStorage.removeItem('isLoggedIn');
+  };
+
+  // Check if user can perform write operations
+  const canEdit = () => {
+    if (!isLoggedIn) {
+      setShowLogin(true);
+      return false;
+    }
+    return true;
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -699,6 +768,20 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-20">
+      {/* Login Modal */}
+      {showLogin && (
+        <Login 
+          onLogin={(username, password) => {
+            const success = handleLogin(username, password);
+            if (success) {
+              setShowLogin(false);
+            }
+            return success;
+          }}
+          onClose={() => setShowLogin(false)}
+        />
+      )}
+
       <Sidebar 
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
@@ -723,6 +806,31 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {isLoggedIn ? (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                  Logged In
+                </div>
+                <button 
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all text-sm font-medium"
+                  title="Logout"
+                >
+                  <LogOut size={18} />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+              </>
+            ) : (
+              <button 
+                onClick={() => setShowLogin(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-full text-sm font-semibold hover:bg-indigo-700 transition-colors"
+              >
+                <LogIn size={16} />
+                Login
+              </button>
+            )}
+            <div className="h-6 w-px bg-gray-200 hidden sm:block mx-1"></div>
             <button 
               onClick={getAiInsights}
               disabled={isGeneratingAi}
@@ -828,13 +936,17 @@ const App: React.FC = () => {
                     id="new-roommate-name"
                     type="text"
                     placeholder="Full Name"
-                    className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                    disabled={!isLoggedIn}
+                    className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm ${
+                      !isLoggedIn ? 'bg-gray-100 cursor-not-allowed' : ''
+                    }`}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && isLoggedIn) {
                         addRoommate(e.currentTarget.value);
                         e.currentTarget.value = '';
                       }
                     }}
+                    title={!isLoggedIn ? 'Please login to add roommates' : ''}
                   />
                   <button
                     onClick={() => {
@@ -842,7 +954,11 @@ const App: React.FC = () => {
                       addRoommate(nameInput.value);
                       nameInput.value = '';
                     }}
-                    className="px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100"
+                    disabled={!isLoggedIn}
+                    className={`px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100 ${
+                      !isLoggedIn ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                    title={!isLoggedIn ? 'Please login to add roommates' : ''}
                   >
                     <Plus size={20} />
                   </button>
@@ -852,7 +968,16 @@ const App: React.FC = () => {
                 {roommates.map(roommate => (
                   <div key={roommate.id} className="group flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-full text-sm font-medium text-gray-700 hover:bg-white hover:border-indigo-200 transition-all shadow-sm">
                     {roommate.name}
-                    <button onClick={() => removeRoommate(roommate.id)} className="text-gray-300 group-hover:text-red-500 transition-colors">
+                    <button 
+                      onClick={() => removeRoommate(roommate.id)} 
+                      disabled={!isLoggedIn}
+                      className={`text-gray-300 transition-colors ${
+                        !isLoggedIn 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : 'group-hover:text-red-500'
+                      }`}
+                      title={!isLoggedIn ? 'Please login to remove roommates' : ''}
+                    >
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -874,8 +999,12 @@ const App: React.FC = () => {
                       type="number"
                       value={localRent || ''}
                       onChange={(e) => setLocalRent(Number(e.target.value))}
-                      className="w-full pl-8 pr-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold"
+                      disabled={!isLoggedIn}
+                      className={`w-full pl-8 pr-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold ${
+                        !isLoggedIn ? 'bg-gray-100 cursor-not-allowed' : ''
+                      }`}
                       placeholder="0.00"
+                      title={!isLoggedIn ? 'Please login to edit fixed costs' : ''}
                     />
                   </div>
                 </div>
@@ -894,11 +1023,15 @@ const App: React.FC = () => {
                 </div>
                 <button
                   type="submit"
+                  disabled={!isLoggedIn}
                   className={`w-full py-3 flex items-center justify-center gap-2 rounded-xl font-bold transition-all shadow-lg ${
                     isSavingFixed 
                     ? 'bg-emerald-500 text-white' 
+                    : !isLoggedIn
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
                     : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-100'
                   }`}
+                  title={!isLoggedIn ? 'Please login to submit bills' : ''}
                 >
                   {isSavingFixed ? <CheckCircle2 size={18} className="animate-bounce" /> : <Save size={18} />}
                   {isSavingFixed ? 'BILLS SUBMITTED!' : 'SUBMIT BILLS'}
@@ -938,7 +1071,7 @@ const App: React.FC = () => {
                   <h2 className="font-bold text-gray-800 text-xl">All Transactions</h2>
                 </div>
               </div>
-              <ExpenseList expenses={expenses} onDelete={deleteExpense} />
+              <ExpenseList expenses={expenses} onDelete={deleteExpense} isLoggedIn={isLoggedIn} />
             </section>
           </div>
         )}
@@ -951,6 +1084,7 @@ const App: React.FC = () => {
               onDelete={deleteExpense} 
               sharedPurchases={sharedPurchases}
               onDeletePurchase={deleteSharedPurchase}
+              isLoggedIn={isLoggedIn}
             />
           </div>
         )}
@@ -964,6 +1098,7 @@ const App: React.FC = () => {
               onAddPurchase={addSharedPurchase}
               onDeletePurchase={deleteSharedPurchase}
               onAddExpense={addExpense}
+              isLoggedIn={isLoggedIn}
             />
           </div>
         )}
@@ -997,6 +1132,7 @@ const App: React.FC = () => {
                 sharedPurchases={sharedPurchases}
                 paidRoommateIds={paidRoommateIds}
                 onTogglePaid={async (id) => {
+                  if (!canEdit()) return;
                   const updated = paidRoommateIds.includes(id) 
                     ? paidRoommateIds.filter(pid => pid !== id) 
                     : [...paidRoommateIds, id];
@@ -1009,6 +1145,7 @@ const App: React.FC = () => {
                 }}
                 onAddExpense={addExpense}
                 fixedCosts={fixedRent + electricityBill}
+                isLoggedIn={isLoggedIn}
               />
             </section>
           </div>

@@ -8,6 +8,7 @@ interface BillingHistoryProps {
   onDelete: (id: string) => void;
   sharedPurchases?: SharedPurchase[];
   onDeletePurchase?: (id: string) => void;
+  isLoggedIn?: boolean;
 }
 
 const getIcon = (type: ExpenseType) => {
@@ -22,7 +23,7 @@ const getIcon = (type: ExpenseType) => {
   }
 };
 
-const BillingHistory: React.FC<BillingHistoryProps> = ({ expenses, onDelete, sharedPurchases = [], onDeletePurchase }) => {
+const BillingHistory: React.FC<BillingHistoryProps> = ({ expenses, onDelete, sharedPurchases = [], onDeletePurchase, isLoggedIn = false }) => {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -289,12 +290,14 @@ const BillingHistory: React.FC<BillingHistoryProps> = ({ expenses, onDelete, sha
                     }`}>
                       ₹{expense.amount.toFixed(2)}
                     </span>
-                    <button
-                      onClick={() => onDelete(expense.id)}
-                      className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    {isLoggedIn && (
+                      <button
+                        onClick={() => onDelete(expense.id)}
+                        className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -387,7 +390,7 @@ const BillingHistory: React.FC<BillingHistoryProps> = ({ expenses, onDelete, sha
                     <span className="font-bold text-lg min-w-[80px] text-right text-gray-900">
                       ₹{purchase.amount.toFixed(2)}
                     </span>
-                    {onDeletePurchase && (
+                    {onDeletePurchase && isLoggedIn && (
                       <button
                         onClick={() => onDeletePurchase(purchase.id)}
                         className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"

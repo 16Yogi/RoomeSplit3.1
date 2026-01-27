@@ -9,6 +9,7 @@ interface ItemSplitCalculatorProps {
   onAddPurchase: (purchase: Omit<SharedPurchase, 'id'>) => void;
   onDeletePurchase: (id: string) => void;
   onAddExpense?: (expense: any) => void; // Optional: to add to expenses if buyer === payer
+  isLoggedIn?: boolean;
 }
 
 const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
@@ -17,6 +18,7 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
   onAddPurchase,
   onDeletePurchase,
   onAddExpense,
+  isLoggedIn = false,
 }) => {
   const [itemName, setItemName] = useState('');
   const [amount, setAmount] = useState('');
@@ -448,7 +450,13 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
 
           <button
             type="submit"
-            className="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+            disabled={!isLoggedIn}
+            className={`w-full md:w-auto px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 shadow-md hover:shadow-lg ${
+              !isLoggedIn
+                ? 'bg-gray-400 text-white cursor-not-allowed'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            }`}
+            title={!isLoggedIn ? 'Please login to add purchases' : ''}
           >
             <Plus size={20} />
             Add Purchase
@@ -623,13 +631,15 @@ const ItemSplitCalculator: React.FC<ItemSplitCalculatorProps> = ({
                     <div className="text-xs text-gray-500 mt-1">Note: {purchase.note}</div>
                   )}
                 </div>
-                <button
-                  onClick={() => onDeletePurchase(purchase.id)}
-                  className="ml-4 p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Delete purchase"
-                >
-                  <Trash2 size={18} />
-                </button>
+                {isLoggedIn && (
+                  <button
+                    onClick={() => onDeletePurchase(purchase.id)}
+                    className="ml-4 p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Delete purchase"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
